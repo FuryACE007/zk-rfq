@@ -1,0 +1,23 @@
+{
+  "name": "zk-rfq-gateway-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "gateway:dev": "cd gateway && npm run dev",
+    "gateway:build": "cd gateway && npm run build",
+    "solver:rust": "cd solver && cargo run --release",
+    "solver:ts": "npx ts-node scripts/mock_multi_chain_solver.ts",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "pint:build": "cd predicates && pint build",
+    "essential:up": "docker compose up -d essential-server",
+    "essential:down": "docker compose down",
+    "essential:logs": "docker compose logs -f essential-server",
+    "deploy:contract": "cd solver && cargo run --release -- deploy"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5",
+    "axios": "^1.7.2"
+  }
+}

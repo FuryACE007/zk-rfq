@@ -1,0 +1,37 @@
+# ─── Build Essential Server from Source ────────────────────────────────
+# The essential-server crate is the centralized implementation of the
+# Essential declarative protocol. We build from crates.io so the image
+# contains only the minimal runtime binary.
+#
+# Alternative: install locally via `cargo install essential-server`
+
+FROM rust:1.79-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    pkg-config libssl-dev curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Install essential-server from crates.io
+# Pin a version compatible with current Pint compiler
+RUN cargo install essential-rest-server \
+    --locked \
+    --root /build/out \
+    || cargo install essential-rest-server --root /build/out
+
+# ─── Runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/out/bin/* /usr/local/bin/
+
+EXPOSE 3553
+
+# Run with in-memory storage (ideal for PoC/testnet)
+# For persistent storage, switch to rqlite backend
+ENTRYPOINT ["essential-rest-server"]
+CMD ["--port", "3553", "--storage", "memory"]

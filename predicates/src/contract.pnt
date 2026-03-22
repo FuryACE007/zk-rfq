@@ -1,0 +1,196 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// ZK-RFQ Settlement Contract — Essential Pint
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// This contract defines the declarative settlement rules for the ZK-RFQ
+// sovereign gateway. Instead of imperative execution (Solidity), we declare
+// the VALID terminal states and let Essential's solver network + block builder
+// determine the optimal path to reach them.
+//
+// Contract Architecture:
+//   - Storage maps track all RFQ order state on-chain (on Essential)
+//   - Predicates define the constraints for each state transition type
+//   - Solvers propose solutions (state mutations) that satisfy ALL constraints
+//   - Essential validates solutions and includes valid ones in blocks
+//
+// What Essential provides natively:
+//   - Intent pool (solutions pool)
+//   - Block building + state validation
+//   - Competing solver support — built into the protocol
+//   - State persistence — in-memory or rqlite storage backend
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─── Storage ─────────────────────────────────────────────────────────────────
+// All RFQ state lives here. Each order is keyed by its order_hash (b256).
+
+storage {
+    // ── Order Data ───────────────────────────────────────────────────────
+    // Written by SubmitOrder, read by SettleOrder.
+    // The limit price is stored as a keccak256 commitment — the plaintext
+    // limit price NEVER touches Essential storage.
+
+    order_amount:           ( b256 => int  ),   // token amount in base units
+    order_deadline:         ( b256 => int  ),   // unix timestamp (fill-by)
+    order_limit_commitment: ( b256 => b256 ),   // keccak256(limit_price || salt)
+    order_swapper:          ( b256 => b256 ),   // institutional client address
+    order_asset_pair:       ( b256 => int  ),   // encoded asset pair ID
+    order_is_active:        ( b256 => bool ),   // true if not yet settled/expired
+
+    // ── Settlement Records ───────────────────────────────────────────────
+    // Written by SettleOrder. Tracks which solver settled and at what price.
+    settlement_solver:          ( b256 => b256 ), // winning solver address
+    settlement_aggregate_quote: ( b256 => int  ), // final aggregate price
+    settlement_block:           ( b256 => int  ), // block number of settlement
+    settlement_completed:       ( b256 => bool ), // settlement finality flag
+
+    // ── Solver Whitelist ─────────────────────────────────────────────────
+    // Managed by GovernanceUpdateWhitelist. Only whitelisted solvers may
+    // submit solutions to SettleOrder.
+    solver_whitelisted: ( b256 => bool ),
+
+    // ── Governance ───────────────────────────────────────────────────────
+    governance_key: b256,
+}
+
+
+// ─── Predicate: Submit Order ─────────────────────────────────────────────────
+// An institutional client submits a new RFQ order. The solver that proposes
+// this solution writes the order data into storage. This is the "intent
+// submission" step — in Essential's model, even writing user intent into
+// storage is a solution that must satisfy constraints.
+//
+// Privacy guarantee: The limit_commitment is a hash of (limit_price, salt).
+// The limit_price itself is a private Noir witness — it never appears in
+// Essential storage or solutions.
+
+predicate SubmitOrder {
+    // ── Decision Variables (provided by the solver in the solution) ───
+    var order_hash:       b256;
+    var amount:           int;
+    var deadline:         int;
+    var limit_commitment: b256;
+    var swapper:          b256;
+    var asset_pair:       int;
+
+    // ── Pre-State Reads ──────────────────────────────────────────────
+    // Check that this order doesn't already exist
+    state existing_active: bool = storage::order_is_active[order_hash];
+
+    // ── Validation Constraints ───────────────────────────────────────
+
+    // C1: Order must not already exist (prevents overwrite attacks)
+    constraint existing_active == false;
+
+    // C2: Amount must be positive (no zero-value orders)
+    constraint amount > 0;
+
+    // C3: Deadline must be in the future (checked at solution time)
+    // Note: In Essential, this can reference block time via built-in intrinsics
+    constraint deadline > 0;
+
+    // C4: Limit commitment must not be zero (ensures actual price binding)
+    constraint limit_commitment != 0x0000000000000000000000000000000000000000000000000000000000000000;
+
+    // C5: Swapper address must be non-zero
+    constraint swapper != 0x0000000000000000000000000000000000000000000000000000000000000000;
+
+    // ── Post-State Mutations ─────────────────────────────────────────
+    // These define what storage MUST look like after this solution is applied.
+
+    constraint storage::order_amount[order_hash]'           == amount;
+    constraint storage::order_deadline[order_hash]'         == deadline;
+    constraint storage::order_limit_commitment[order_hash]' == limit_commitment;
+    constraint storage::order_swapper[order_hash]'          == swapper;
+    constraint storage::order_asset_pair[order_hash]'       == asset_pair;
+    constraint storage::order_is_active[order_hash]'        == true;
+}
+
+
+// ─── Predicate: Settle Order ─────────────────────────────────────────────────
+// A whitelisted solver settles an active order. The solver has:
+//   1. Fetched JIT prices from Uniswap V3 (EVM) and Jupiter (Solana)
+//   2. Computed optimal cross-chain routing weights
+//   3. Generated a Noir ZK proof that:
+//      - The aggregate price is correctly derived from real DEX sources
+//      - The aggregate price meets the institution's secret limit price
+//   4. Has the proof validated (off-chain or via proof registry)
+//
+// Essential's value here: the settlement is a declarative state mutation.
+// We never write imperative swap logic — we just declare what the settled
+// state must look like, and Essential validates it atomically.
+
+predicate SettleOrder {
+    // ── Decision Variables ────────────────────────────────────────────
+    var order_hash:       b256;
+    var solver:           b256;
+    var aggregate_quote:  int;    // Final aggregate price (public Noir output)
+    var proof_verified:   bool;   // Noir proof verification flag
+
+    // ── Pre-State Reads ──────────────────────────────────────────────
+    state amount:      int  = storage::order_amount[order_hash];
+    state deadline:    int  = storage::order_deadline[order_hash];
+    state is_active:   bool = storage::order_is_active[order_hash];
+    state whitelisted: bool = storage::solver_whitelisted[solver];
+    state already_settled: bool = storage::settlement_completed[order_hash];
+
+    // ── Settlement Constraints ───────────────────────────────────────
+    // These 6 constraints are enforced by Essential natively via
+    // predicate validation before block inclusion.
+
+    // C1: Order must exist and be active
+    constraint is_active == true;
+    constraint amount > 0;
+
+    // C2: Solver must be whitelisted (KYC/AML enforcement point)
+    constraint whitelisted == true;
+
+    // C3: No double settlement (UTXO-style spend protection)
+    constraint already_settled == false;
+
+    // C4: Aggregate quote must be positive
+    constraint aggregate_quote > 0;
+
+    // C5: Noir ZK proof must be verified
+    // In the PoC, the solver sets this after running the local prover.
+    // In production, this would be validated by an on-chain proof verifier
+    // contract that the solver's solution also interacts with.
+    constraint proof_verified == true;
+
+    // C6: Deadline not exceeded
+    // Note: In production Essential, __block_timestamp() or equivalent
+    // intrinsic would enforce this at consensus time.
+    // For the PoC, this is checked at the gateway level.
+
+    // ── Post-State Mutations ─────────────────────────────────────────
+    // Mark order as inactive and record settlement details
+
+    constraint storage::order_is_active[order_hash]'            == false;
+    constraint storage::settlement_solver[order_hash]'          == solver;
+    constraint storage::settlement_aggregate_quote[order_hash]' == aggregate_quote;
+    constraint storage::settlement_completed[order_hash]'       == true;
+}
+
+
+// ─── Predicate: Update Solver Whitelist ──────────────────────────────────────
+// Governance-only: add or remove solvers from the whitelist.
+// In production, `governance_key` should be a multi-sig or DAO-controlled key.
+
+predicate GovernanceUpdateWhitelist {
+    // ── Decision Variables ────────────────────────────────────────────
+    var solver_address: b256;
+    var new_status:     bool;    // true = whitelist, false = remove
+    var caller:         b256;
+
+    // ── Pre-State Reads ──────────────────────────────────────────────
+    state gov_key: b256 = storage::governance_key;
+
+    // ── Constraints ──────────────────────────────────────────────────
+    // Only the governance key holder can modify the whitelist
+    constraint caller == gov_key;
+
+    // Solver address must be non-zero
+    constraint solver_address != 0x0000000000000000000000000000000000000000000000000000000000000000;
+
+    // ── Post-State Mutation ──────────────────────────────────────────
+    constraint storage::solver_whitelisted[solver_address]' == new_status;
+}

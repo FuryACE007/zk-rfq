@@ -1,0 +1,55 @@
+# ZK-RFQ Sovereign Gateway — Docker Compose
+# Runs the Essential declarative protocol server + dependencies
+#
+# Usage:
+#   docker compose up -d          # Start essential-server
+#   docker compose logs -f        # Watch logs
+#   docker compose down           # Stop
+
+version: '3.9'
+
+services:
+  # ─── Essential Declarative Protocol Server ──────────────────────────
+  # The essential-server is a centralized implementation of the Essential
+  # protocol. It validates solutions against deployed Pint contracts,
+  # builds blocks, and provides a REST API for contract deployment,
+  # solution submission, and state queries.
+  #
+  # In production, this will be replaced by Essential's decentralized
+  # node network — but the REST API and behaviour are identical.
+  essential-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.essential
+    container_name: zk-rfq-essential-server
+    ports:
+      - '0.0.0.0:3553:3553' # Essential REST API
+    environment:
+      - RUST_LOG=info,essential_server=debug,essential_rest_server=debug
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3553/health']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - essential-data:/data
+
+  # ─── NestJS Sovereign Gateway ───────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: zk-rfq-gateway
+    ports:
+      - '0.0.0.0:4000:4000'
+    environment:
+      - ESSENTIAL_API_URL=http://essential-server:3553
+      - PORT=4000
+    depends_on:
+      essential-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  essential-data:

@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+frontend/node_modules/
+frontend/.next/
+
+# Build outputs
+dist/
+build/
+out/
+*.o
+*.a
+*.so
+
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Frontend specific
+.next/
+.nuxt/
+coverage/
+
+# Essential/Docker
+.claude/
+docker-compose.override.yml

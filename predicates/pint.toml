@@ -1,0 +1,4 @@
+[package]
+name = "zk_rfq_settlement"
+authors = ["ZK-RFQ Sovereign Gateway"]
+edition = "2024"
