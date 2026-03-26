@@ -34,4 +34,4 @@ EXPOSE 3553
 # Run with in-memory storage (ideal for PoC/testnet)
 # For persistent storage, switch to rqlite backend
 ENTRYPOINT ["essential-rest-server"]
-CMD ["--port", "3553", "--storage", "memory"]
+CMD ["0.0.0.0:3553"]

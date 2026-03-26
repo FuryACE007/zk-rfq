@@ -6,8 +6,6 @@
 #   docker compose logs -f        # Watch logs
 #   docker compose down           # Stop
 
-version: '3.9'
-
 services:
   # ─── Essential Declarative Protocol Server ──────────────────────────
   # The essential-server is a centralized implementation of the Essential

@@ -86,23 +86,30 @@ const TerminalPage: NextPage = () => {
         />
       </Head>
 
+      {/* Aurora background orbs */}
+      <div className="aurora-orb aurora-orb-1" />
+      <div className="aurora-orb aurora-orb-2" />
+      <div className="aurora-orb aurora-orb-3" />
+
       <div className="min-h-screen relative">
         {/* Nav */}
-        <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5 relative z-10">
+        <nav className="nav-glass flex items-center justify-between px-8 py-4 relative z-10">
           <Link
             href="/"
             className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={15} />
             Back to Overview
           </Link>
           <div className="flex items-center gap-3">
-            <span className="badge badge-active">
-              <span className="w-1.5 h-1.5 rounded-full bg-settle-400 animate-pulse-slow" />
-              Gateway Online
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="pulse-ring pulse-ring-settle">
+                <span className="dot" />
+              </span>
+              <span className="badge badge-active">Gateway Online</span>
+            </div>
             <Link href="/mempool">
-              <button className="text-sm px-4 py-1.5 rounded-lg border border-intent-500/30 text-intent-300 hover:border-intent-400/50 transition-all">
+              <button className="text-sm px-4 py-1.5 rounded-lg border border-intent-500/30 text-intent-300 hover:border-intent-400/50 hover:shadow-[0_0_16px_rgba(6,182,212,0.15)] transition-all">
                 View Mempool →
               </button>
             </Link>
@@ -114,16 +121,25 @@ const TerminalPage: NextPage = () => {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className="mb-8">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-zk-600 to-intent-500 flex items-center justify-center">
-                  <Shield size={14} className="text-white" />
+            {/* Page Header */}
+            <div className="mb-10">
+              <div className="flex items-center gap-2 mb-1 text-xs text-slate-600 font-mono uppercase tracking-widest">
+                <Link href="/" className="hover:text-slate-400 transition-colors">Overview</Link>
+                <span>/</span>
+                <span className="text-slate-500">Trader Terminal</span>
+              </div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-zk-600 to-intent-500 flex items-center justify-center shadow-lg">
+                  <Shield size={15} className="text-white" />
                 </div>
-                <h1 className="text-2xl font-bold text-white">
+                <h1
+                  className="font-bold text-white tracking-tight"
+                  style={{ fontSize: '28px', letterSpacing: '-0.02em' }}
+                >
                   Institutional Trader Terminal
                 </h1>
               </div>
-              <p className="text-slate-500 text-sm ml-9">
+              <p className="text-slate-500 text-sm ml-11">
                 Submit block trade intents. Your limit price is committed via
                 keccak256 — never stored in plaintext.
               </p>
@@ -131,10 +147,11 @@ const TerminalPage: NextPage = () => {
 
             <div className="grid grid-cols-3 gap-5">
               {/* Main Form */}
-              <div className="col-span-2 glass-card p-6">
+              <div className="col-span-2 glass-card p-7">
+                {/* Form header */}
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-white font-semibold flex items-center gap-2">
-                    <Lock size={16} className="text-zk-400" />
+                  <h2 className="text-white font-semibold flex items-center gap-2 text-sm uppercase tracking-wider">
+                    <Lock size={14} className="text-zk-400" />
                     New Block Trade Intent
                   </h2>
                   <div className="flex items-center gap-2">
@@ -155,18 +172,25 @@ const TerminalPage: NextPage = () => {
                 </div>
 
                 {formatErc7683 && (
-                  <div className="flex items-center gap-2 p-2.5 rounded-lg bg-intent-500/8 border border-intent-500/20 mb-5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-intent-400" />
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-intent-500/8 border border-intent-500/20 mb-6">
+                    <span className="pulse-ring pulse-ring-intent flex-shrink-0">
+                      <span className="dot" style={{ width: '6px', height: '6px' }} />
+                    </span>
                     <span className="text-intent-300 text-xs font-mono">
                       CrossChainOrder format enabled — ERC-7683 compliant
                     </span>
                   </div>
                 )}
 
-                <form onSubmit={handleSubmit} className="space-y-4">
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  {/* Section overline */}
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5">
+                    Trade Parameters
+                  </div>
+
                   {/* Asset Pair */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                       Asset Pair
                     </label>
                     <div className="relative">
@@ -188,7 +212,7 @@ const TerminalPage: NextPage = () => {
                             initial={{ opacity: 0, y: -4 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -4 }}
-                            className="absolute top-full left-0 right-0 z-50 mt-1 py-1 rounded-lg border border-zk-600/30 bg-sovereign-900/95 backdrop-blur-xl shadow-xl"
+                            className="absolute top-full left-0 right-0 z-50 mt-1 py-1 rounded-xl border border-zk-600/30 bg-sovereign-900/95 backdrop-blur-xl shadow-2xl"
                           >
                             {ASSET_PAIRS.map((pair) => (
                               <button
@@ -198,7 +222,7 @@ const TerminalPage: NextPage = () => {
                                   setAssetPair(pair);
                                   setShowPairDropdown(false);
                                 }}
-                                className={`w-full text-left px-4 py-2 text-sm transition-colors hover:bg-zk-600/10 ${pair === assetPair ? 'text-zk-300' : 'text-slate-300'}`}
+                                className={`w-full text-left px-4 py-2.5 text-sm transition-colors hover:bg-zk-600/10 ${pair === assetPair ? 'text-zk-300' : 'text-slate-300'}`}
                               >
                                 {pair}
                               </button>
@@ -211,9 +235,9 @@ const TerminalPage: NextPage = () => {
 
                   {/* Amount */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                       Trade Size{' '}
-                      <span className="text-slate-600">({baseA})</span>
+                      <span className="text-slate-600 normal-case">({baseA})</span>
                     </label>
                     <input
                       id="trade-amount"
@@ -228,15 +252,20 @@ const TerminalPage: NextPage = () => {
                     />
                   </div>
 
+                  {/* Section overline */}
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5 pt-1">
+                    Privacy & Commitment
+                  </div>
+
                   {/* Secret Limit Price */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5 flex items-center gap-1.5">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                       <Lock size={11} className="text-zk-400" />
                       Secret Limit Price
-                      <span className="text-slate-600">
+                      <span className="text-slate-600 normal-case font-normal">
                         ({baseB} per {baseA})
                       </span>
-                      <span className="badge badge-zk ml-auto">
+                      <span className="badge badge-zk ml-auto normal-case">
                         ZK-committed
                       </span>
                     </label>
@@ -261,15 +290,19 @@ const TerminalPage: NextPage = () => {
                         {showLimit ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
                     </div>
-                    <p className="text-slate-600 text-xs mt-1 font-mono">
-                      Market: ${marketPrice.toLocaleString()} · Stored as
-                      keccak256 commitment only
+                    <p className="text-slate-600 text-xs mt-1.5 font-mono">
+                      Market: ${marketPrice.toLocaleString()} · Stored as keccak256 commitment only
                     </p>
+                  </div>
+
+                  {/* Section overline */}
+                  <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5 pt-1">
+                    Settlement
                   </div>
 
                   {/* Swapper Address */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                       Settlement Wallet
                     </label>
                     <input
@@ -284,9 +317,9 @@ const TerminalPage: NextPage = () => {
 
                   {/* TTL */}
                   <div>
-                    <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
                       Intent TTL:{' '}
-                      <span className="text-slate-300">
+                      <span className="text-slate-300 normal-case font-normal">
                         {ttlSeconds}s ({(ttlSeconds / 60).toFixed(1)} min)
                       </span>
                     </label>
@@ -306,7 +339,7 @@ const TerminalPage: NextPage = () => {
                     type="submit"
                     id="submit-intent-btn"
                     disabled={loading}
-                    className="btn-primary w-full mt-2 flex items-center justify-center gap-2 py-3"
+                    className="btn-primary w-full mt-3 flex items-center justify-center gap-2 py-3.5 text-sm font-semibold"
                   >
                     {loading ? (
                       <span className="flex items-center gap-2">
@@ -325,36 +358,31 @@ const TerminalPage: NextPage = () => {
               {/* Side Panel */}
               <div className="space-y-4">
                 {/* Privacy Status */}
-                <div className="glass-card p-4">
-                  <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">
+                <div className="glass-card p-5">
+                  <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-widest">
                     Privacy Status
                   </h3>
-                  <div className="space-y-2.5">
+                  <div className="space-y-1">
                     {[
-                      {
-                        label: 'Limit Price',
-                        status: 'keccak256 committed',
-                        ok: true,
-                      },
-                      { label: 'Asset Pair', status: 'Public', ok: false },
-                      { label: 'Trade Size', status: 'Public', ok: false },
-                      { label: 'DEX Routing', status: 'ZK-masked', ok: true },
-                      {
-                        label: 'Pool Addresses',
-                        status: 'Hidden in proof',
-                        ok: true,
-                      },
+                      { label: 'Limit Price',    status: 'keccak256',  ok: true  },
+                      { label: 'Asset Pair',     status: 'Public',     ok: false },
+                      { label: 'Trade Size',     status: 'Public',     ok: false },
+                      { label: 'DEX Routing',    status: 'ZK-masked',  ok: true  },
+                      { label: 'Pool Addrs',     status: 'ZK-hidden',  ok: true  },
                     ].map((row) => (
                       <div
                         key={row.label}
-                        className="flex items-center justify-between text-xs"
+                        className="flex items-center justify-between text-xs py-2 px-2 rounded-lg"
+                        style={{
+                          borderLeft: `2px solid ${row.ok ? 'rgba(139,92,246,0.5)' : 'rgba(100,116,139,0.2)'}`,
+                          background: row.ok ? 'rgba(139,92,246,0.04)' : 'transparent',
+                        }}
                       >
-                        <span className="text-slate-400">{row.label}</span>
+                        <span className="text-slate-400 shrink-0">{row.label}</span>
                         <span
-                          className={`font-mono ${row.ok ? 'text-zk-400' : 'text-slate-500'}`}
+                          className={`font-mono text-xs whitespace-nowrap ml-2 ${row.ok ? 'text-zk-400' : 'text-slate-600'}`}
                         >
-                          {row.ok ? '🔒 ' : ''}
-                          {row.status}
+                          {row.ok ? '🔒 ' : ''}{row.status}
                         </span>
                       </div>
                     ))}
@@ -362,8 +390,8 @@ const TerminalPage: NextPage = () => {
                 </div>
 
                 {/* ERC-7683 Info */}
-                <div className="glass-card-intent p-4">
-                  <h3 className="text-xs font-semibold text-intent-300 mb-2 uppercase tracking-wider flex items-center gap-1.5">
+                <div className="glass-card-intent p-5">
+                  <h3 className="text-xs font-semibold text-intent-300 mb-2.5 uppercase tracking-widest flex items-center gap-1.5">
                     <Zap size={11} />
                     ERC-7683
                   </h3>
@@ -383,15 +411,17 @@ const TerminalPage: NextPage = () => {
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="glass-card-settle p-4"
+                      className="glass-card-settle p-5"
                     >
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="w-2 h-2 rounded-full bg-settle-400 animate-pulse-slow" />
-                        <span className="text-settle-300 text-xs font-semibold uppercase tracking-wider">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="pulse-ring pulse-ring-settle">
+                          <span className="dot" style={{ width: '6px', height: '6px' }} />
+                        </span>
+                        <span className="text-settle-300 text-xs font-semibold uppercase tracking-widest">
                           Order Live
                         </span>
                       </div>
-                      <p className="text-slate-400 text-xs mb-1">Order Hash:</p>
+                      <p className="text-slate-500 text-xs mb-1">Order Hash:</p>
                       <p className="font-mono text-xs text-white break-all mb-2">
                         {submitted.orderHash}
                       </p>
@@ -402,7 +432,7 @@ const TerminalPage: NextPage = () => {
                         ).toLocaleTimeString()}
                       </p>
                       <Link href="/mempool">
-                        <button className="mt-3 w-full text-xs py-1.5 rounded-lg bg-settle-500/20 border border-settle-500/30 text-settle-300 hover:bg-settle-500/30 transition-all">
+                        <button className="mt-3 w-full text-xs py-2 rounded-lg bg-settle-500/20 border border-settle-500/30 text-settle-300 hover:bg-settle-500/30 hover:shadow-[0_0_16px_rgba(16,185,129,0.2)] transition-all">
                           View in Mempool →
                         </button>
                       </Link>

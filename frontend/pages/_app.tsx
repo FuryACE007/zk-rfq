@@ -1,11 +1,27 @@
 import type { AppProps } from 'next/app';
+import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Toaster } from 'react-hot-toast';
 import '../styles/globals.css';
 
+// next/font — zero render-blocking, self-hosted font delivery with automatic
+// font subsetting. Replaces the @import in globals.css.
+const inter = Inter({
+  subsets: ['latin'],
+  variable: '--font-inter',
+  display: 'swap',
+  weight: ['300', '400', '500', '600', '700', '800'],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-mono',
+  display: 'swap',
+  weight: ['400', '500', '600'],
+});
+
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <>
-      <div className="scan-line" />
+    <div className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <Component {...pageProps} />
       <Toaster
         position="bottom-right"
@@ -26,6 +42,6 @@ export default function App({ Component, pageProps }: AppProps) {
           },
         }}
       />
-    </>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
+/* Fonts are loaded via next/font in _app.tsx — no render-blocking @import needed */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,8 +9,11 @@
   --color-intent: #06b6d4;
   --color-settle: #10b981;
   --color-danger: #f43f5e;
-  --glass-bg: rgba(10, 22, 40, 0.6);
-  --glass-border: rgba(139, 92, 246, 0.15);
+  --glass-bg: rgba(8, 16, 32, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  /* next/font CSS variables */
+  --font-inter: var(--font-inter, 'Inter', system-ui, sans-serif);
+  --font-mono: var(--font-mono, 'JetBrains Mono', 'Fira Code', monospace);
 }
 
 * {
@@ -25,58 +27,183 @@ html {
 }
 
 body {
-  background-color: #020408;
-  background-image:
-    radial-gradient(at 27% 37%, hsla(255, 70%, 12%, 1) 0px, transparent 50%),
-    radial-gradient(at 97% 21%, hsla(205, 70%, 8%, 1) 0px, transparent 50%),
-    radial-gradient(at 52% 99%, hsla(270, 60%, 10%, 1) 0px, transparent 50%),
-    radial-gradient(at 10% 29%, hsla(256, 65%, 15%, 1) 0px, transparent 50%),
-    radial-gradient(at 97% 96%, hsla(200, 70%, 6%, 1) 0px, transparent 50%);
+  background-color: #030609;
   background-attachment: fixed;
   color: #e2e8f0;
-  font-family: 'Inter', system-ui, sans-serif;
+  /* Use CSS variable injected by next/font, fall back to system fonts */
+  font-family: var(--font-inter), system-ui, sans-serif;
+  font-feature-settings: 'ss01' on, 'cv01' on;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  position: relative;
+  overflow-x: hidden;
 }
 
-/* ─── Glassmorphism Cards ─────────────────────────────────────────────────── */
+/* ─── Aurora Orbs ──────────────────────────────────────────────────────────── */
+.aurora-orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(100px);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.55;
+  /* Promote to GPU compositor layer — prevents layout/paint during animation */
+  will-change: transform;
+  transform: translateZ(0);
+}
+
+.aurora-orb-1 {
+  width: 700px;
+  height: 700px;
+  background: radial-gradient(circle, rgba(124, 58, 237, 0.7) 0%, transparent 70%);
+  top: -200px;
+  left: -150px;
+  animation: auroraFloat1 18s ease-in-out infinite alternate;
+}
+
+.aurora-orb-2 {
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.55) 0%, transparent 70%);
+  top: 40%;
+  right: -200px;
+  animation: auroraFloat2 22s ease-in-out infinite alternate;
+}
+
+.aurora-orb-3 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.5) 0%, transparent 70%);
+  bottom: -100px;
+  left: 30%;
+  animation: auroraFloat3 16s ease-in-out infinite alternate;
+}
+
+@keyframes auroraFloat1 {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(60px, 80px) scale(1.1); }
+}
+
+@keyframes auroraFloat2 {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-80px, -60px) scale(0.95); }
+}
+
+@keyframes auroraFloat3 {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(40px, -50px) scale(1.08); }
+}
+
+/* ─── Dot Grid Overlay ─────────────────────────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Noise overlay ────────────────────────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  opacity: 0.35;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── Frosted Navbar ───────────────────────────────────────────────────────── */
+.nav-glass {
+  background: rgba(3, 6, 9, 0.7);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* ─── Glassmorphism Cards v2 ──────────────────────────────────────────────── */
 .glass-card {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   box-shadow:
-    0 8px 32px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.4);
+  /* contain: paint prevents the card's repaint from affecting ancestors */
+  contain: paint;
   transition:
     box-shadow 0.3s ease,
-    border-color 0.3s ease;
+    border-color 0.3s ease,
+    transform 0.3s ease;
 }
 
 .glass-card:hover {
-  border-color: rgba(139, 92, 246, 0.3);
+  border-color: rgba(139, 92, 246, 0.25);
   box-shadow:
-    0 8px 40px rgba(0, 0, 0, 0.5),
-    0 0 20px rgba(139, 92, 246, 0.08),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 24px 48px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(139, 92, 246, 0.08);
 }
 
 .glass-card-intent {
   background: rgba(6, 182, 212, 0.05);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
   border: 1px solid rgba(6, 182, 212, 0.2);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(6, 182, 212, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.4);
 }
 
 .glass-card-settle {
   background: rgba(16, 185, 129, 0.05);
-  backdrop-filter: blur(16px);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
   border: 1px solid rgba(16, 185, 129, 0.2);
   border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 1px 0 rgba(16, 185, 129, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.4);
+}
+
+/* ─── Bento Cards ──────────────────────────────────────────────────────────── */
+.bento-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.4);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.bento-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+}
+
+.bento-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 32px 64px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(139, 92, 246, 0.06);
 }
 
 /* ─── Gradient Text ────────────────────────────────────────────────────────── */
@@ -115,60 +242,93 @@ body {
 
 /* ─── Terminal / Log Styles ────────────────────────────────────────────────── */
 .terminal {
-  background: rgba(2, 4, 8, 0.8);
+  background: rgba(2, 4, 8, 0.85);
   border: 1px solid rgba(16, 185, 129, 0.2);
   border-radius: 12px;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 0.75rem;
   overflow: hidden;
+  position: relative;
+}
+
+/* Terminal accent glow bar */
+.terminal::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(16, 185, 129, 0.8), rgba(6, 182, 212, 0.6), transparent);
+  z-index: 1;
 }
 
 .terminal-header {
-  background: rgba(16, 185, 129, 0.08);
-  border-bottom: 1px solid rgba(16, 185, 129, 0.15);
-  padding: 8px 12px;
+  background: rgba(16, 185, 129, 0.06);
+  border-bottom: 1px solid rgba(16, 185, 129, 0.12);
+  padding: 10px 14px;
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 2px;
 }
 
 .terminal-dot {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
 }
 
 .log-entry {
-  padding: 4px 12px;
+  padding: 3px 12px;
   border-left: 2px solid transparent;
   transition: all 0.2s ease;
-  animation: slideUp 0.3s ease-out;
+  animation: slideUp 0.25s ease-out;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  line-height: 1.6;
 }
 
 .log-entry:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.log-entry .log-ts {
+  color: rgba(100, 116, 139, 0.7);
+  margin-right: 10px;
+  font-size: 0.68rem;
 }
 
 .log-entry.success {
   border-left-color: #10b981;
   color: #6ee7b7;
 }
+.log-entry.success .log-ts { color: rgba(110, 231, 183, 0.45); }
+
 .log-entry.info {
   border-left-color: #06b6d4;
   color: #67e8f9;
 }
+.log-entry.info .log-ts { color: rgba(103, 232, 249, 0.45); }
+
 .log-entry.warn {
   border-left-color: #f59e0b;
   color: #fcd34d;
 }
+.log-entry.warn .log-ts { color: rgba(252, 211, 77, 0.45); }
+
 .log-entry.proof {
   border-left-color: #8b5cf6;
   color: #c4b5fd;
 }
+.log-entry.proof .log-ts { color: rgba(196, 181, 253, 0.45); }
+
 .log-entry.error {
   border-left-color: #f43f5e;
   color: #fb7185;
 }
+.log-entry.error .log-ts { color: rgba(251, 113, 133, 0.45); }
 
 /* ─── Status Badges ────────────────────────────────────────────────────────── */
 .badge {
@@ -184,21 +344,77 @@ body {
 }
 
 .badge-zk {
-  background: rgba(139, 92, 246, 0.2);
-  border: 1px solid rgba(139, 92, 246, 0.4);
+  background: rgba(139, 92, 246, 0.18);
+  border: 1px solid rgba(139, 92, 246, 0.38);
   color: #c4b5fd;
 }
 
 .badge-active {
-  background: rgba(16, 185, 129, 0.2);
-  border: 1px solid rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.18);
+  border: 1px solid rgba(16, 185, 129, 0.38);
   color: #6ee7b7;
 }
 
 .badge-pending {
-  background: rgba(251, 191, 36, 0.15);
-  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.13);
+  border: 1px solid rgba(251, 191, 36, 0.28);
   color: #fcd34d;
+}
+
+/* ─── Pulse Ring Status Indicator ─────────────────────────────────────────── */
+.pulse-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pulse-ring .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+  z-index: 2;
+}
+
+.pulse-ring::before,
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  animation: pulseRing 2.4s ease-out infinite;
+}
+
+.pulse-ring::before {
+  width: 16px;
+  height: 16px;
+  opacity: 0.5;
+  animation-delay: 0s;
+}
+
+.pulse-ring::after {
+  width: 24px;
+  height: 24px;
+  opacity: 0.25;
+  animation-delay: 0.5s;
+}
+
+.pulse-ring-settle .dot { background: #34d399; }
+.pulse-ring-settle::before { border: 1px solid #34d399; }
+.pulse-ring-settle::after  { border: 1px solid #34d399; }
+
+.pulse-ring-zk .dot { background: #a78bfa; }
+.pulse-ring-zk::before { border: 1px solid #a78bfa; }
+.pulse-ring-zk::after  { border: 1px solid #a78bfa; }
+
+.pulse-ring-intent .dot { background: #22d3ee; }
+.pulse-ring-intent::before { border: 1px solid #22d3ee; }
+.pulse-ring-intent::after  { border: 1px solid #22d3ee; }
+
+@keyframes pulseRing {
+  0%   { transform: scale(0.8); opacity: 0.6; }
+  70%  { transform: scale(1.5); opacity: 0; }
+  100% { transform: scale(1.5); opacity: 0; }
 }
 
 /* ─── Button Styles ────────────────────────────────────────────────────────── */
@@ -215,7 +431,24 @@ body {
   overflow: hidden;
 }
 
+/* Shimmer sweep on hover */
 .btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.18) 40%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  background-position: -100% 0;
+  transition: background-position 0s;
+}
+
+.btn-primary::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -224,12 +457,19 @@ body {
   transition: opacity 0.2s ease;
 }
 
-.btn-primary:hover::before {
+.btn-primary:hover::after {
   opacity: 1;
 }
 
+.btn-primary:hover::before {
+  background-position: 200% 0;
+  transition: background-position 0.6s ease;
+}
+
 .btn-primary:hover {
-  box-shadow: 0 0 25px rgba(139, 92, 246, 0.5);
+  box-shadow:
+    0 0 30px rgba(139, 92, 246, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.4);
   transform: translateY(-1px);
 }
 
@@ -242,29 +482,38 @@ body {
   z-index: 1;
 }
 
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 /* ─── Input Styles ─────────────────────────────────────────────────────────── */
 .input-sovereign {
-  background: rgba(5, 13, 24, 0.7);
+  background: rgba(4, 10, 20, 0.6);
   border: 1px solid rgba(139, 92, 246, 0.2);
-  border-radius: 8px;
+  border-radius: 10px;
   color: #e2e8f0;
   font-family: 'Inter', sans-serif;
   font-size: 0.875rem;
   outline: none;
-  padding: 10px 14px;
+  padding: 11px 14px;
   transition:
     border-color 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    background 0.2s ease;
   width: 100%;
 }
 
 .input-sovereign:focus {
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  background: rgba(8, 16, 34, 0.75);
+  border-color: rgba(139, 92, 246, 0.65);
+  box-shadow:
+    0 0 0 3px rgba(139, 92, 246, 0.15),
+    0 0 20px rgba(139, 92, 246, 0.08);
 }
 
 .input-sovereign::placeholder {
-  color: rgba(148, 163, 184, 0.4);
+  color: rgba(148, 163, 184, 0.35);
 }
 
 /* ─── Toggle Switch ────────────────────────────────────────────────────────── */
@@ -293,7 +542,7 @@ body {
 input:checked + .toggle-track {
   background: linear-gradient(135deg, #7c3aed, #0891b2);
   border-color: transparent;
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.5);
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.5);
 }
 
 .toggle-thumb {
@@ -331,53 +580,7 @@ input:checked ~ .toggle-thumb {
   background: rgba(139, 92, 246, 0.7);
 }
 
-/* ─── Scan line animation ─────────────────────────────────────────────────── */
-@keyframes scan-line {
-  0% {
-    transform: translateY(-100%);
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(100vh);
-    opacity: 0;
-  }
-}
-
-.scan-line {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(139, 92, 246, 0.4),
-    transparent
-  );
-  animation: scan-line 8s linear infinite;
-  pointer-events: none;
-  z-index: 9999;
-}
-
-/* ─── Noise overlay ────────────────────────────────────────────────────────── */
-body::after {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
-  opacity: 0.4;
-  pointer-events: none;
-  z-index: 0;
-}
-
-/* Dividers */
+/* ─── Dividers ─────────────────────────────────────────────────────────────── */
 .divider-glow {
   height: 1px;
   background: linear-gradient(
@@ -387,4 +590,65 @@ body::after {
     rgba(6, 182, 212, 0.4),
     transparent
   );
+}
+
+/* ─── Skeleton placeholder ─────────────────────────────────────────────────── */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50%       { opacity: 0.7; }
+}
+
+.skeleton {
+  animation: skeletonPulse 2s ease-in-out infinite;
+}
+
+/* ─── Animations ───────────────────────────────────────────────────────────── */
+@keyframes slideUp {
+  0%   { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  0%   { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* ─── Monospace font class using next/font variable ───────────────────────── */
+.font-mono, code, pre, .terminal, .log-entry {
+  font-family: var(--font-mono), 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ─── Smooth transitions — GPU-composited properties only ─────────────────── */
+/* Only animate transform + opacity (compositor-only = no layout/paint cost) */
+.transition-gpu {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity   0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform, opacity;
+}
+
+/* ─── Respect user's motion preference ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  /* Stop all background animations */
+  .aurora-orb,
+  .skeleton,
+  .pulse-ring::before,
+  .pulse-ring::after {
+    animation: none !important;
+  }
+
+  /* Instant transitions instead of animated ones */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Performance: promote nav to its own compositor layer ────────────────── */
+.nav-glass {
+  will-change: backdrop-filter;
+  transform: translateZ(0);
 }

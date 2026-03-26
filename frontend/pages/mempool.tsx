@@ -35,10 +35,8 @@ interface Bid {
   solverAddress: string;
   finalAggregateQuote: string;
   bidExpiry: number;
-  routingMeta: {
-    evmWeightBps: number;
-    solanaWeightBps: number;
-  };
+  evmWeightBps?: number;
+  solanaWeightBps?: number;
 }
 
 const MempoolPage: NextPage = () => {
@@ -104,14 +102,19 @@ const MempoolPage: NextPage = () => {
         />
       </Head>
 
+      {/* Aurora background orbs */}
+      <div className="aurora-orb aurora-orb-1" />
+      <div className="aurora-orb aurora-orb-2" />
+      <div className="aurora-orb aurora-orb-3" />
+
       <div className="min-h-screen relative">
         {/* Nav */}
-        <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5 relative z-10">
+        <nav className="nav-glass flex items-center justify-between px-8 py-4 relative z-10">
           <Link
             href="/"
             className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={15} />
             Back
           </Link>
           <div className="flex items-center gap-3">
@@ -140,7 +143,7 @@ const MempoolPage: NextPage = () => {
               Refresh
             </button>
             <Link href="/settlement">
-              <button className="text-sm px-4 py-1.5 rounded-lg border border-settle-500/30 text-settle-300 hover:border-settle-400/50 transition-all">
+              <button className="text-sm px-4 py-1.5 rounded-lg border border-settle-500/30 text-settle-300 hover:border-settle-400/50 hover:shadow-[0_0_16px_rgba(16,185,129,0.15)] transition-all">
                 Settlement Log →
               </button>
             </Link>
@@ -149,31 +152,43 @@ const MempoolPage: NextPage = () => {
 
         <div className="relative z-10 max-w-6xl mx-auto px-6 py-10">
           {/* Header */}
-          <div className="flex items-start justify-between mb-8">
+          <div className="flex items-start justify-between mb-10">
             <div>
-              <h1 className="text-2xl font-bold text-white flex items-center gap-2 mb-1">
-                <Activity size={22} className="text-intent-400" />
+              <div className="flex items-center gap-2 mb-1 text-xs text-slate-600 font-mono uppercase tracking-widest">
+                <Link href="/" className="hover:text-slate-400 transition-colors">Overview</Link>
+                <span>/</span>
+                <span className="text-slate-500">Gateway Mempool</span>
+              </div>
+              <h1
+                className="text-white font-bold flex items-center gap-3 mb-1.5 tracking-tight whitespace-nowrap"
+                style={{ fontSize: '22px', letterSpacing: '-0.02em' }}
+              >
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-intent-500 to-intent-700 flex items-center justify-center shadow-lg flex-shrink-0">
+                  <Activity size={16} className="text-white" />
+                </div>
                 Sovereign Pool Mempool
               </h1>
-              <p className="text-slate-500 text-sm">
-                Essential sovereign solution pool · {intents.length} active
-                intent{intents.length !== 1 ? 's' : ''}
+              <p className="text-slate-500 text-sm ml-11 whitespace-nowrap">
+                Solution pool ·{' '}
+                <span className="text-slate-400">{intents.length} active intent{intents.length !== 1 ? 's' : ''}</span>
                 {lastRefresh && (
                   <span className="ml-3 text-slate-600">
-                    Last refresh: {lastRefresh.toLocaleTimeString()}
+                    Updated {lastRefresh.toLocaleTimeString()}
                   </span>
                 )}
               </p>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="glass-card px-4 py-2 flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-intent-400 animate-pulse-slow" />
+              <div className="glass-card px-4 py-2.5 flex items-center gap-2.5 whitespace-nowrap">
+                <span className="pulse-ring pulse-ring-intent">
+                  <span className="dot" style={{ width: '7px', height: '7px' }} />
+                </span>
                 <span className="text-intent-300 text-xs font-mono">
-                  Essential Solution Pool
+                  Solution Pool
                 </span>
               </div>
-              <div className="glass-card px-4 py-2 flex items-center gap-2">
+              <div className="glass-card px-4 py-2.5 flex items-center gap-2">
                 <Eye size={12} className="text-slate-500" />
                 <span className="text-slate-400 text-xs">
                   {intents.length} active
@@ -184,19 +199,57 @@ const MempoolPage: NextPage = () => {
 
           {/* Empty state */}
           {!loading && intents.length === 0 && (
-            <div className="glass-card p-12 text-center">
-              <Activity size={36} className="text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500 font-medium">
-                No active intents in sovereign pool
-              </p>
-              <p className="text-slate-600 text-sm mt-1">
-                Submit a block trade from the Trader Terminal to get started.
-              </p>
-              <Link href="/terminal">
-                <button className="btn-primary mt-4 inline-block px-6 py-2 text-sm">
-                  <span>→ Open Trader Terminal</span>
-                </button>
-              </Link>
+            <div className="space-y-3">
+              {/* Skeleton cards — depth effect */}
+              {[
+                { opacity: 0.28, pair: 'WETH/USDC', amount: '50.00', bids: 2, w1: 'w-28', w2: 'w-20', w3: 'w-36' },
+                { opacity: 0.16, pair: 'WBTC/USDC', amount: '1.25', bids: 1, w1: 'w-24', w2: 'w-16', w3: 'w-28' },
+                { opacity: 0.08, pair: 'SOL/USDC', amount: '200.00', bids: 3, w1: 'w-20', w2: 'w-24', w3: 'w-32' },
+              ].map((sk, i) => (
+                <div
+                  key={i}
+                  className="glass-card p-5 pointer-events-none select-none"
+                  style={{ opacity: sk.opacity }}
+                  aria-hidden="true"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="h-5 w-24 rounded-lg bg-white/10 skeleton" />
+                        <div className="h-4 w-16 rounded-full bg-zk-600/20 skeleton" />
+                        <div className="h-4 w-14 rounded-full bg-intent-500/15 skeleton" />
+                      </div>
+                      <div className="flex gap-4">
+                        <div className={`h-3 ${sk.w3} rounded bg-white/6 skeleton`} />
+                        <div className={`h-3 ${sk.w2} rounded bg-white/6 skeleton`} />
+                      </div>
+                    </div>
+                    <div className="text-center shrink-0">
+                      <div className="h-7 w-6 mx-auto rounded bg-white/10 skeleton mb-1" />
+                      <div className="h-3 w-12 rounded bg-white/6 skeleton" />
+                    </div>
+                    <div className="h-7 w-28 rounded-lg bg-white/6 skeleton shrink-0" />
+                  </div>
+                </div>
+              ))}
+
+              {/* Centered message overlay */}
+              <div className="glass-card p-14 text-center -mt-2" style={{ background: 'rgba(2,4,8,0.88)', backdropFilter: 'blur(36px)' }}>
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-white/8 flex items-center justify-center mx-auto mb-5">
+                  <Activity size={26} className="text-slate-600" />
+                </div>
+                <p className="text-slate-300 font-semibold text-base mb-2">
+                  No active intents in sovereign pool
+                </p>
+                <p className="text-slate-600 text-sm mb-7 max-w-sm mx-auto">
+                  Submit a block trade from the Trader Terminal to broadcast an ERC-7683 intent to the pool.
+                </p>
+                <Link href="/terminal">
+                  <button className="btn-primary inline-block px-8 py-2.5 text-sm">
+                    <span className="flex items-center gap-2">→ Open Trader Terminal</span>
+                  </button>
+                </Link>
+              </div>
             </div>
           )}
 
@@ -226,7 +279,7 @@ const MempoolPage: NextPage = () => {
                         {/* Asset + Status */}
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <span className="text-white font-bold text-lg">
+                            <span className="text-white font-bold text-lg tracking-tight">
                               {intent.order.orderData.assetPair}
                             </span>
                             <span className="badge badge-active">ERC-7683</span>
@@ -254,7 +307,7 @@ const MempoolPage: NextPage = () => {
 
                         {/* Competing solutions count */}
                         <div className="text-center">
-                          <div className="text-2xl font-bold gradient-text-zk">
+                          <div className="text-2xl font-bold gradient-text-zk" style={{ fontFeatureSettings: "'ss01' on" }}>
                             {intentBids.length}
                           </div>
                           <div className="text-xs text-slate-500">solution{intentBids.length !== 1 ? 's' : ''}</div>
@@ -262,7 +315,7 @@ const MempoolPage: NextPage = () => {
 
                         {/* Inclusion auction status */}
                         <div className="w-28">
-                          <div className="text-xs text-center px-2 py-1 rounded-md border border-zk-600/20 bg-zk-600/8 text-zk-400">
+                          <div className="text-xs text-center px-2 py-1.5 rounded-lg border border-zk-600/20 bg-zk-600/8 text-zk-400">
                             {intentBids.length > 0
                               ? 'Inclusion auction'
                               : 'Awaiting solvers'}
@@ -301,9 +354,9 @@ const MempoolPage: NextPage = () => {
                           className="border-t border-white/5 overflow-hidden"
                         >
                           <div className="p-5">
-                            <div className="flex items-center gap-2 mb-3">
+                            <div className="flex items-center gap-2 mb-4">
                               <Filter size={13} className="text-slate-500" />
-                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
                                 Solver Bids — Multi-Chain Routing Masked
                               </span>
                             </div>
@@ -318,14 +371,15 @@ const MempoolPage: NextPage = () => {
                                 {intentBids.map((bid, i) => (
                                   <div
                                     key={i}
-                                    className="flex items-center gap-4 p-3 rounded-lg bg-white/3 border border-white/5"
+                                    className="flex items-center gap-4 p-3.5 rounded-xl bg-white/3 border border-white/5"
+                                    style={{ borderLeft: '2px solid rgba(139,92,246,0.3)' }}
                                   >
-                                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-zk-600 to-intent-500 flex items-center justify-center text-xs font-bold text-white">
+                                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-zk-600 to-intent-500 flex items-center justify-center text-xs font-bold text-white shadow-lg">
                                       {i + 1}
                                     </div>
                                     <div className="flex-1">
                                       <div className="flex items-center gap-2 mb-0.5">
-                                        <span className="text-white text-sm font-semibold">
+                                        <span className="text-white text-sm font-semibold" style={{ fontFeatureSettings: "'ss01' on" }}>
                                           $
                                           {(
                                             Number(bid.finalAggregateQuote) /
@@ -343,15 +397,16 @@ const MempoolPage: NextPage = () => {
                                     </div>
                                     <div className="text-right">
                                       <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                                        <span className="px-1.5 py-0.5 rounded bg-intent-500/15 text-intent-300 font-mono">
-                                          {bid.routingMeta?.evmWeightBps / 100}%
-                                          EVM
-                                        </span>
-                                        <span className="px-1.5 py-0.5 rounded bg-zk-500/15 text-zk-300 font-mono">
-                                          {bid.routingMeta?.solanaWeightBps /
-                                            100}
-                                          % SOL
-                                        </span>
+                                        {bid.evmWeightBps != null && (
+                                          <span className="px-2 py-0.5 rounded-lg bg-intent-500/15 text-intent-300 font-mono">
+                                            {bid.evmWeightBps / 100}% EVM
+                                          </span>
+                                        )}
+                                        {bid.solanaWeightBps != null && (
+                                          <span className="px-2 py-0.5 rounded-lg bg-zk-500/15 text-zk-300 font-mono">
+                                            {bid.solanaWeightBps / 100}% SOL
+                                          </span>
+                                        )}
                                       </div>
                                     </div>
                                     <Zap
@@ -364,14 +419,14 @@ const MempoolPage: NextPage = () => {
                             )}
 
                             {/* Limit Price Commitment */}
-                            <div className="mt-4 p-3 rounded-lg bg-zk-600/8 border border-zk-600/20">
-                              <div className="text-xs text-zk-400 mb-0.5 font-semibold">
+                            <div className="mt-4 p-3.5 rounded-xl bg-zk-600/8 border border-zk-600/20">
+                              <div className="text-xs text-zk-400 mb-1 font-semibold uppercase tracking-wider">
                                 Limit Price Commitment (on-chain)
                               </div>
-                              <div className="font-mono text-xs text-slate-400 break-all">
+                              <div className="font-mono text-xs text-slate-400 break-all leading-relaxed">
                                 {intent.order.orderData.limitPriceCommitment}
                               </div>
-                              <div className="text-xs text-slate-600 mt-1">
+                              <div className="text-xs text-slate-600 mt-1.5">
                                 Plaintext limit price never leaves the
                                 institution's process
                               </div>

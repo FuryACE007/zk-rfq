@@ -392,16 +392,30 @@ zk-rfq-gateway/
 
 ### Prerequisites
 
-| Tool             | Version  | Purpose                             |
-| ---------------- | -------- | ----------------------------------- |
-| Node.js          | >= 20.x  | Runtime                             |
-| npm              | >= 10.x  | Package management                  |
-| Docker           | >= 24.x  | Essential server container          |
-| Rust / Cargo     | >= 1.79  | Solver bot compilation              |
-| Pint (optional)  | latest   | Pint contract compilation           |
-| Nargo (optional) | >= 0.30.0| Real Noir proof generation          |
+| Tool             | Version   | Purpose                             | Required |
+| ---------------- | --------- | ----------------------------------- | -------- |
+| Node.js          | >= 20.x   | Runtime                             | ✅ Yes   |
+| npm              | >= 10.x   | Package management                  | ✅ Yes   |
+| Docker           | >= 24.x   | Essential server container          | ✅ Yes   |
+| Rust / Cargo     | >= 1.79   | Solver bot compilation              | ✅ Yes   |
+| Pint             | latest    | Pint contract compilation           | ⚠️ For contract deploy |
+| Nargo            | >= 0.30.0 | Real Noir proof generation          | Optional |
+
+**Install Rust** (if not already installed):
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source ~/.cargo/env
+```
+
+**Install Pint** (required to compile and deploy the smart contract):
+```bash
+cargo install pint-cli
+# Verify: pint --version
+```
 
 ### Step 1: Install Dependencies
+
+Run all three installs from the project root:
 
 ```bash
 # Root workspace
@@ -412,10 +426,9 @@ cd gateway && npm install && cd ..
 
 # Next.js Frontend
 cd frontend && npm install && cd ..
-
-# Rust Solver (compile)
-cd solver && cargo build --release && cd ..
 ```
+
+The Rust solver compiles on demand — no separate install step needed.
 
 ### Step 2: Start the Essential Server
 
@@ -423,13 +436,19 @@ cd solver && cargo build --release && cd ..
 # Start Essential server via Docker (port 3553)
 npm run essential:up
 
-# Verify connectivity
-curl http://localhost:3553/health
+# Watch startup logs to confirm it is listening
+npm run essential:logs
+# Look for: "Listening on: 0.0.0.0:3553"
+
+# Alternatively, check the container is running
+docker ps | grep essential
 ```
 
-You should see a health response confirming the server is running with in-memory storage.
+> **Note:** The Essential REST server does not expose a standard HTTP `/health` endpoint. Use `docker ps` or `npm run essential:logs` to verify it is running. You will see periodic `valid_solution=...` lines in the logs once the block builder starts.
 
 ### Step 3: Build & Deploy the Pint Contract
+
+> **Prerequisite:** Pint must be installed (`cargo install pint-cli`).
 
 ```bash
 # Compile the Pint contract
@@ -438,35 +457,47 @@ npm run pint:build
 # Deploy to the Essential server
 npm run deploy:contract
 
-# Output:
+# Expected output:
 # ✅ Contract deployed successfully!
-# Content address: [...]
+# Content address: [0x...]
 ```
 
-The contract is content-addressed — redeploying the same bytecode returns the same address (idempotent).
+The contract is content-addressed — redeploying the same bytecode always returns the same address (idempotent).
+
+> **Skipping this step:** The gateway will start without a deployed contract and store intents locally for development. You will see a warning: `⚠️  No Essential contract deployed`. The solver can still poll and submit bids but Essential will not validate them against Pint constraints.
 
 ### Step 4: Start the NestJS Gateway
 
 ```bash
 npm run gateway:dev
-
-# Output:
-# ZK-RFQ Sovereign Gateway — ONLINE
-# Essential server connected
-# Listening on http://localhost:4000
-# Swagger docs: http://localhost:4000/api/docs
 ```
+
+Expected output:
+```
+[Nest] LOG [NestApplication] Nest application successfully started
+╔══════════════════════════════════════════════════════════╗
+║  ZK-RFQ Sovereign Gateway — ONLINE                       ║
+║  Local Sovereign Pool listening on http://localhost:4000  ║
+║  Swagger docs: http://localhost:4000/api/docs             ║
+╚══════════════════════════════════════════════════════════╝
+```
+
+> **Network note:** When the gateway runs on the host and Essential runs in Docker, the gateway connects to Essential at `http://localhost:3553`. This works correctly. If you run the gateway inside Docker as well, use the service name `http://essential-server:3553` (already configured in `docker-compose.yml`).
 
 ### Step 5: Start the Multi-Chain Solver Bot
 
 ```bash
 npm run solver:rust
-
-# Output:
-# ⚡ ZK-RFQ Multi-Chain Solver Bot (Rust)
-# 🏛️  Essential Declarative Protocol — Native Solver
-# 🚀 Starting sovereign pool polling (every 2000ms)...
 ```
+
+Expected output:
+```
+⚡ ZK-RFQ Multi-Chain Solver Bot (Rust)
+🏛️  Essential Declarative Protocol — Native Solver
+🚀 Starting sovereign pool polling (every 2000ms)...
+```
+
+The solver polls `/intents/active` every 2 seconds. When it finds an active intent, it fetches concurrent JIT prices, generates a mock ZK proof, and submits a bid back to the gateway.
 
 ### Step 6: Start the Frontend Dashboard
 
@@ -475,27 +506,52 @@ npm run frontend:dev
 # Open: http://localhost:3000
 ```
 
+Available pages:
+- `/` — Landing / architecture overview
+- `/terminal` — Institutional trader terminal (submit intents)
+- `/mempool` — Live Essential solution pool
+- `/settlement` — Settlement monitor (polls Essential block status)
+
 ### Step 7: Test End-to-End via API
 
 ```bash
-# Submit an intent
+# Submit an intent (use a valid 20-byte hex swapper address)
 curl -X POST http://localhost:4000/intents \
   -H "Content-Type: application/json" \
   -d '{
     "assetPair": "WETH/USDC",
     "amount": "50000000000000000000",
     "limitPrice": "2490000000",
-    "swapperAddress": "0xInstitutionalClientWallet0000000000000000",
+    "swapperAddress": "0x1234567890123456789012345678901234567890",
     "ttlSeconds": 300
   }'
 
+# Expected response — order hash + ERC-7683 formatted order:
+# { "orderHash": "0x...", "erc7683Order": {...}, "essentialAccepted": true/false }
+
 # Check active intents
 curl http://localhost:4000/intents/active
+
+# Check gateway + Essential health
+curl http://localhost:4000/health
+curl http://localhost:4000/health/essential-block
 
 # The solver bot will automatically poll, fetch JIT prices,
 # generate ZK-witnesses, and submit bids → triggering settlement
 # via Essential's inclusion auction
 ```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+| ------- | ----- | --- |
+| `curl http://localhost:3553/health` hangs or returns `HTTP/0.9` error | Essential server uses a non-standard HTTP framing | Use `docker ps` or `npm run essential:logs` to verify instead |
+| `⚠️  Essential server not reachable` in gateway logs | Docker and host are on different network stacks | Expected if Essential is in Docker and gateway on host; they communicate correctly in practice. Check `docker ps` is showing the container as `Up`. |
+| `error: unexpected argument '--port'` in Docker logs | Stale Docker image cached from before the Dockerfile fix | Run `docker compose down && docker compose up -d --build essential-server` |
+| `Cannot find module 'ethers'` in gateway | Missing dependency | Run `cd gateway && npm install` |
+| `pint: command not found` | Pint compiler not installed | Run `cargo install pint-cli` |
+| `Do not know how to serialize a BigInt` | Node.js JSON serialisation limitation | Already patched in `intents.service.ts` — ensure you have the latest code |
+| Gateway starts but `essential: "offline"` in `/health` | Essential container not yet up | Run `npm run essential:up` and wait for `Listening on: 0.0.0.0:3553` in logs |
 
 ### Running the Noir Circuit (Optional)
 

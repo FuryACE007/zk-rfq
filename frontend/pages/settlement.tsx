@@ -268,20 +268,27 @@ const SettlementPage: NextPage = () => {
         />
       </Head>
 
+      {/* Aurora background orbs */}
+      <div className="aurora-orb aurora-orb-1" />
+      <div className="aurora-orb aurora-orb-2" />
+      <div className="aurora-orb aurora-orb-3" />
+
       <div className="min-h-screen relative">
         {/* Nav */}
-        <nav className="flex items-center justify-between px-8 py-5 border-b border-white/5 relative z-10">
+        <nav className="nav-glass flex items-center justify-between px-8 py-4 relative z-10">
           <Link
             href="/mempool"
             className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={15} />
             Back to Mempool
           </Link>
           <div className="flex items-center gap-3">
             {blockNumber !== null ? (
               <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-settle-500/40 text-settle-300 bg-settle-500/10">
-                <span className="w-1.5 h-1.5 rounded-full bg-settle-400 animate-pulse-slow" />
+                <span className="pulse-ring pulse-ring-settle">
+                  <span className="dot" style={{ width: '6px', height: '6px' }} />
+                </span>
                 Essential · Block #{blockNumber}
               </div>
             ) : (
@@ -315,14 +322,28 @@ const SettlementPage: NextPage = () => {
         </nav>
 
         <div className="relative z-10 max-w-6xl mx-auto px-6 py-10">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2 mb-1">
-              <Cpu size={22} className="text-settle-400" />
-              Local Settlement Monitor
-            </h1>
-            <p className="text-slate-500 text-sm">
-              Essential declarative protocol server · Noir proof
-              verification + solution inclusion
+          {/* Page Header */}
+          <div className="mb-10">
+            <div className="flex items-center gap-2 mb-1 text-xs text-slate-600 font-mono uppercase tracking-widest">
+              <Link href="/" className="hover:text-slate-400 transition-colors">Overview</Link>
+              <span>/</span>
+              <Link href="/mempool" className="hover:text-slate-400 transition-colors">Mempool</Link>
+              <span>/</span>
+              <span className="text-slate-500">Settlement Monitor</span>
+            </div>
+            <div className="flex items-center gap-3 mb-1.5">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-settle-500 to-settle-600 flex items-center justify-center shadow-lg">
+                <Cpu size={15} className="text-white" />
+              </div>
+              <h1
+                className="font-bold text-white tracking-tight"
+                style={{ fontSize: '26px', letterSpacing: '-0.02em' }}
+              >
+                Local Settlement Monitor
+              </h1>
+            </div>
+            <p className="text-slate-500 text-sm ml-11">
+              Essential declarative protocol server · Noir proof verification + solution inclusion
             </p>
           </div>
 
@@ -333,15 +354,15 @@ const SettlementPage: NextPage = () => {
                 <div className="terminal-header">
                   <div
                     className="terminal-dot"
-                    style={{ background: '#f43f5e' }}
+                    style={{ background: '#f43f5e', color: '#f43f5e' }}
                   />
                   <div
                     className="terminal-dot"
-                    style={{ background: '#f59e0b' }}
+                    style={{ background: '#f59e0b', color: '#f59e0b' }}
                   />
                   <div
                     className="terminal-dot"
-                    style={{ background: '#10b981' }}
+                    style={{ background: '#10b981', color: '#10b981' }}
                   />
                   <span className="ml-2 text-xs text-settle-400/70 font-mono">
                     essential-server · Pint Declarative VM
@@ -357,11 +378,13 @@ const SettlementPage: NextPage = () => {
                 <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
                   {logs.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center">
-                      <Cpu size={28} className="text-slate-700 mb-3" />
-                      <p className="text-slate-600 text-sm">
+                      <div className="w-12 h-12 rounded-xl bg-white/4 border border-white/6 flex items-center justify-center mb-4">
+                        <Cpu size={22} className="text-slate-600" />
+                      </div>
+                      <p className="text-slate-600 text-sm font-mono">
                         Waiting for settlement activity...
                       </p>
-                      <p className="text-slate-700 text-xs mt-1">
+                      <p className="text-slate-700 text-xs mt-1 font-mono">
                         Start Essential server or activate Demo Mode
                       </p>
                     </div>
@@ -375,9 +398,7 @@ const SettlementPage: NextPage = () => {
                         animate={{ opacity: 1, x: 0 }}
                         className={`log-entry ${logColorClass(entry.type)}`}
                       >
-                        <span className="text-slate-700 mr-2">
-                          [{entry.timestamp}]
-                        </span>
+                        <span className="log-ts">[{entry.timestamp}]</span>
                         {entry.message}
                       </motion.div>
                     ))}
@@ -390,18 +411,19 @@ const SettlementPage: NextPage = () => {
             {/* Side Panel */}
             <div className="space-y-4">
               {/* Node Status */}
-              <div className="glass-card-settle p-4">
-                <h3 className="text-xs font-semibold text-settle-300 mb-3 uppercase tracking-wider flex items-center gap-1.5">
+              <div className="glass-card-settle p-5">
+                <h3 className="text-xs font-semibold text-settle-300 mb-4 uppercase tracking-widest flex items-center gap-1.5">
                   <Shield size={11} />
                   Infrastructure Status
                 </h3>
-                <div className="space-y-2.5">
+                <div className="space-y-1">
                   {[
                     {
                       label: 'Essential Server',
                       status:
                         blockNumber !== null ? 'Connected' : 'Offline',
                       ok: blockNumber !== null,
+                      accent: blockNumber !== null ? '#10b981' : '#f43f5e',
                     },
                     {
                       label: 'Block Builder',
@@ -410,22 +432,28 @@ const SettlementPage: NextPage = () => {
                           ? `Block #${blockNumber}`
                           : 'Offline',
                       ok: blockNumber !== null,
+                      accent: blockNumber !== null ? '#10b981' : '#f43f5e',
                     },
-                    { label: 'Noir Prover', status: 'PoC Mock Mode', ok: true },
+                    { label: 'Noir Prover', status: 'PoC Mock Mode', ok: true, accent: '#8b5cf6' },
                     {
                       label: 'Gateway API',
                       status: 'Localhost:4000',
                       ok: true,
+                      accent: '#06b6d4',
                     },
-                    { label: 'Public RPC', status: 'Not required', ok: true },
+                    { label: 'Public RPC', status: 'Not required', ok: true, accent: '#10b981' },
                   ].map((row) => (
                     <div
                       key={row.label}
-                      className="flex items-center justify-between text-xs"
+                      className="flex items-center justify-between text-xs py-2 px-2 rounded-lg"
+                      style={{
+                        borderLeft: `2px solid ${row.accent}`,
+                        background: `${row.accent}08`,
+                      }}
                     >
                       <span className="text-slate-400">{row.label}</span>
                       <span
-                        className={`flex items-center gap-1 font-mono ${
+                        className={`flex items-center gap-1 font-mono text-xs ${
                           row.ok ? 'text-settle-400' : 'text-danger-400'
                         }`}
                       >
@@ -442,11 +470,11 @@ const SettlementPage: NextPage = () => {
               </div>
 
               {/* Legend */}
-              <div className="glass-card p-4">
-                <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-wider">
+              <div className="glass-card p-5">
+                <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-widest">
                   Log Legend
                 </h3>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {[
                     { color: '#10b981', label: 'Settlement event' },
                     { color: '#06b6d4', label: 'System info' },
@@ -456,11 +484,14 @@ const SettlementPage: NextPage = () => {
                   ].map((item) => (
                     <div
                       key={item.label}
-                      className="flex items-center gap-2 text-xs text-slate-500"
+                      className="flex items-center gap-2.5 text-xs text-slate-500"
                     >
                       <div
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: item.color }}
+                        className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                        style={{
+                          backgroundColor: item.color,
+                          boxShadow: `0 0 6px ${item.color}80`,
+                        }}
                       />
                       {item.label}
                     </div>
@@ -469,38 +500,40 @@ const SettlementPage: NextPage = () => {
               </div>
 
               {/* Quick Start */}
-              <div className="glass-card p-4">
-                <h3 className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
+              <div className="glass-card p-5">
+                <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-widest">
                   Quick Start
                 </h3>
-                <div className="space-y-1.5 font-mono text-xs">
-                  {[
-                    '# Start Essential server',
-                    'npm run essential:up',
-                    '',
-                    '# Build & deploy contract',
-                    'npm run pint:build',
-                    'npm run deploy:contract',
-                    '',
-                    '# Start gateway',
-                    'npm run gateway:dev',
-                    '',
-                    '# Run solver',
-                    'npm run solver:rust',
-                  ].map((line, i) => (
-                    <div
-                      key={i}
-                      className={
-                        line.startsWith('#')
-                          ? 'text-slate-600'
-                          : line === ''
-                          ? 'h-2'
-                          : 'text-settle-400'
-                      }
-                    >
-                      {line}
-                    </div>
-                  ))}
+                <div className="space-y-0.5 font-mono text-xs rounded-xl overflow-hidden border border-white/5" style={{ background: 'rgba(2,4,8,0.6)' }}>
+                  <div className="px-3 pt-3 pb-1">
+                    {[
+                      { text: '# Start Essential server', type: 'comment' },
+                      { text: 'npm run essential:up', type: 'cmd' },
+                      { text: '', type: 'spacer' },
+                      { text: '# Build & deploy contract', type: 'comment' },
+                      { text: 'npm run pint:build', type: 'cmd' },
+                      { text: 'npm run deploy:contract', type: 'cmd' },
+                      { text: '', type: 'spacer' },
+                      { text: '# Start gateway', type: 'comment' },
+                      { text: 'npm run gateway:dev', type: 'cmd' },
+                      { text: '', type: 'spacer' },
+                      { text: '# Run solver', type: 'comment' },
+                      { text: 'npm run solver:rust', type: 'cmd' },
+                    ].map((line, i) => (
+                      <div
+                        key={i}
+                        className={
+                          line.type === 'comment'
+                            ? 'text-slate-600 py-0.5'
+                            : line.type === 'spacer'
+                            ? 'h-2'
+                            : 'text-settle-400 py-0.5 pl-2 border-l border-settle-700/30'
+                        }
+                      >
+                        {line.text}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

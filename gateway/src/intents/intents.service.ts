@@ -11,8 +11,7 @@ import {
   RfqOrderData,
   Input,
   Output,
-  generateNonce,
-  hashOrder,
+  hashCrossChainOrder,
 } from '../types/erc7683';
 import { SubmitIntentDto } from '../dto/gateway.dto';
 
@@ -66,17 +65,19 @@ export class IntentsService {
       .digest('hex');
 
     // ── Step 2: Format as ERC-7683 CrossChainOrder ────────────────────
-    const nonce = generateNonce();
+    const nonce = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
     const orderData: RfqOrderData = {
       assetPair: dto.assetPair,
+      sourceChainId: 0, // Essential (non-EVM)
+      destinationChainId: 0, // Essential (non-EVM)
+      minFillBps: 9500, // 95% minimum fill
       fillDeadline: expiresAt,
       limitPriceCommitment: `0x${limitPriceCommitment}`,
-      minimumAggregateQuote: '0', // Bound by ZK proof, not plaintext
       zkMaskApplied: true,
     };
 
     const order: CrossChainOrder = {
-      settlementContract: 'essential://zk-rfq-settlement', // Essential contract reference
+      settlementContract: '0x0000000000000000000000000000000000000000', // Essential contract (zero address placeholder)
       swapper: dto.swapperAddress,
       nonce,
       originChainId: 0, // Essential (non-EVM, native)
@@ -86,20 +87,20 @@ export class IntentsService {
       inputs: [
         {
           token: dto.assetPair.split('/')[0],
-          amount: dto.amount,
+          amount: BigInt(dto.amount),
         },
       ],
       outputs: [
         {
           token: dto.assetPair.split('/')[1],
-          amount: '0', // Determined by solver aggregate quote
+          amount: BigInt(0), // Determined by solver aggregate quote
           recipient: dto.swapperAddress,
           chainId: 0,
         },
       ],
     };
 
-    const orderHash = hashOrder(order);
+    const orderHash = hashCrossChainOrder(order);
 
     this.logger.log(
       `📋 New ERC-7683 intent: ${dto.assetPair} | Amount: ${
@@ -155,7 +156,19 @@ export class IntentsService {
       createdAt: now,
     });
 
-    return { orderHash, erc7683Order: order, essentialAccepted, expiresAt };
+    // Convert BigInt fields to strings for JSON serialization
+    const serializableOrder = JSON.parse(
+      JSON.stringify(order, (_, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    );
+
+    return {
+      orderHash,
+      erc7683Order: serializableOrder,
+      essentialAccepted,
+      expiresAt,
+    };
   }
 
   /**
