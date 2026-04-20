@@ -1,0 +1,112 @@
+# Testnet Demo: What Needs to Change
+
+Analysis of all mocked/simulated components in the ZK-RFQ PoC and what's required to run a demo with a real wallet on a testnet, with observable transactions.
+
+---
+
+## Current Mocking Inventory
+
+| # | Component | Current State | File(s) |
+|---|-----------|--------------|---------|
+| 1 | **DEX Price Feeds** | Random jitter around hardcoded base prices | [main.rs](file:///Users/aeres/Desktop/projects/zk-rfq/solver/src/main.rs#L430-L465) |
+| 2 | **Noir ZK Proof** | SHA256 hash of witness data (fake proof) | [main.rs](file:///Users/aeres/Desktop/projects/zk-rfq/solver/src/main.rs#L497-L513) |
+| 3 | **Wallet / Signing** | Hardcoded hex strings as addresses, no signing | [terminal.tsx](file:///Users/aeres/Desktop/projects/zk-rfq/frontend/pages/terminal.tsx#L25-L27) |
+| 4 | **Token Transfers** | No ERC-20 transfers occur — pure state bookkeeping | [contract.pnt](file:///Users/aeres/Desktop/projects/zk-rfq/predicates/src/contract.pnt) |
+| 5 | **Settlement Layer** | Local Essential Docker container, in-memory storage | [docker-compose.yml](file:///Users/aeres/Desktop/projects/zk-rfq/docker-compose.yml) |
+| 6 | **Proof Verification** | `proof_verified` is always set to `true` by the solver | [bids.service.ts](file:///Users/aeres/Desktop/projects/zk-rfq/gateway/src/bids/bids.service.ts#L179) |
+
+---
+
+## What "Demo with a Wallet on a Testnet Explorer" Means
+
+For a believable demo you need at minimum:
+
+1. **A real blockchain** (testnet) where transactions are visible on a public explorer
+2. **A real wallet** (MetaMask / WalletConnect) that signs transactions
+3. **Observable on-chain state changes** that someone watching the explorer can see
+
+Essential's local Docker server is a private, non-public network — there is no explorer. So you need to decide: **which testnet?**
+
+---
+
+## Two Realistic Paths
+
+### Path A: Deploy Settlement Contracts on an EVM Testnet (Recommended for Demo)
+
+> [!TIP]
+> This is the fastest path to a "wow" demo — real MetaMask signatures, real Sepolia/Base Goerli transactions, real Etherscan links.
+
+#### What to build
+
+| Work Item | Effort | Details |
+|-----------|--------|---------|
+| **Solidity Settlement Contract** | ~2-3 days | A `ZkRfqSettlement.sol` contract that mirrors the Pint predicates: `submitOrder()`, `settleOrder()`, `updateWhitelist()`. Deploy on Sepolia or Base Sepolia. |
+| **Noir Verifier Contract** | ~1 day | Run `nargo codegen-verifier` to generate a Solidity verifier from the existing Noir circuit. Deploy it and call it from `settleOrder()`. |
+| **Frontend Wallet Integration** | ~1-2 days | Add ethers.js + MetaMask/WalletConnect. The "Submit Intent" button signs a real tx. The swapper address comes from the connected wallet. |
+| **Gateway → EVM RPC** | ~1 day | Replace [EssentialService](file:///Users/aeres/Desktop/projects/zk-rfq/gateway/src/essential/essential.service.ts#72-312) calls with ethers.js contract calls (or add an `EvmSettlementService` alongside). Use Alchemy/Infura Sepolia RPC. |
+| **Real DEX Price Feeds** | ~0.5 day | Replace [fetch_jit_uniswap()](file:///Users/aeres/Desktop/projects/zk-rfq/solver/src/main.rs#430-448) / [fetch_jit_jupiter()](file:///Users/aeres/Desktop/projects/zk-rfq/solver/src/main.rs#449-466) with real Uniswap V3 QuoterV2 calls on Sepolia (or mainnet fork) and Jupiter API. |
+| **Real Noir Proofs** | ~1 day | Replace [generate_mock_noir_proof()](file:///Users/aeres/Desktop/projects/zk-rfq/solver/src/main.rs#497-514) with either `nargo prove` CLI call or Barretenberg Rust FFI. Needs Nargo ≥ 0.30.0 installed. |
+
+**Total estimate: ~6-8 days of work.**
+
+What the demo looks like:
+- User connects MetaMask → sees their address in the terminal
+- Clicks "Submit Intent" → MetaMask popup → signs tx → visible on [Sepolia Etherscan](https://sepolia.etherscan.io)
+- Solver picks it up → generates real ZK proof → submits settlement tx → also visible on Etherscan
+- Frontend shows links to both transactions
+
+---
+
+### Path B: Keep Essential, Add a Testnet Bridge Transaction
+
+> [!NOTE]
+> Essential doesn't have a public testnet or explorer. This path keeps Essential for the core settlement logic but adds a "proof-of-existence" anchor transaction on an EVM testnet.
+
+#### What to build
+
+| Work Item | Effort | Details |
+|-----------|--------|---------|
+| **Anchor Contract** | ~1 day | A minimal Solidity contract on Sepolia that emits events: `OrderSubmitted(bytes32 orderHash)` and `OrderSettled(bytes32 orderHash, address solver, uint256 quote)`. No actual settlement logic. |
+| **Gateway Dual-Write** | ~0.5 day | After Essential accepts a solution, the gateway also calls the anchor contract to emit the event on Sepolia. |
+| **Frontend Wallet Connect** | ~1-2 days | Same as Path A — MetaMask signs the anchor tx, not the Essential solution. |
+| **Real Noir Proofs** | ~1 day | Same as Path A. |
+| **Real DEX Feeds** | ~0.5 day | Same as Path A. |
+
+**Total estimate: ~4-5 days of work.**
+
+What the demo looks like:
+- Core settlement still runs on Essential (sovereign infrastructure story preserved)
+- An anchor tx on Sepolia provides the "look, it's on a blockchain explorer" moment
+- Less impressive than Path A because the actual settlement isn't on-chain
+
+---
+
+## Priority-Ordered Todo List
+
+If you want the maximum demo impact with the least effort, here's the order I'd suggest:
+
+### Tier 1 — Must-Have for Any Demo (3-4 days)
+1. **Frontend wallet integration** (MetaMask connect, real address)
+2. **Real Noir proof generation** (replace SHA256 mock)
+3. **At least one real DEX price feed** (Uniswap QuoterV2 on Sepolia or mainnet fork)
+
+### Tier 2 — Needed for Explorer Visibility (2-3 days)
+4. **Solidity settlement contract OR anchor contract** on Sepolia
+5. **Gateway integration** with the deployed contract
+
+### Tier 3 — Polish (1-2 days)
+6. **Both DEX feeds live** (Uniswap + Jupiter)
+7. **Explorer links** in the frontend settlement monitor
+8. **Persistent Essential storage** (rqlite backend)
+
+---
+
+## Key Decision Points
+
+> [!IMPORTANT]
+> Before starting, you need to decide:
+
+1. **Path A vs Path B?** — Do you want settlement ON the testnet (Path A), or settlement on Essential with an anchor tx on testnet (Path B)?
+2. **Which testnet?** — Sepolia (most standard), Base Sepolia (L2, cheaper/faster), or Arbitrum Sepolia?
+3. **Real Jupiter API?** — Jupiter's mainnet API works for quotes (no tx needed), but the solver would need a Solana devnet wallet for actual swaps. For a demo, read-only quotes from Jupiter mainnet may be sufficient.
+4. **Test tokens?** — On Sepolia you'll need test ETH from a faucet. Do you want to also deploy mock ERC-20 tokens (WETH/USDC) for a more complete demo?

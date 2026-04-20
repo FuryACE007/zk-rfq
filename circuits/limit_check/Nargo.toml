@@ -1,0 +1,13 @@
+[package]
+name = "limit_check"
+type = "bin"
+authors = ["ZK-RFQ Gateway Research"]
+compiler_version = ">=1.0.0"
+description = """
+Limit Check Circuit (Institution Proves): Proves that a solver's aggregate quote
+meets the institution's secret limit price without revealing the limit to anyone.
+Generated client-side in the browser via noir_js WASM. Protects institutional
+trading intent from front-running.
+"""
+
+[dependencies]

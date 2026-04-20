@@ -1,10 +1,12 @@
 import type { NextPage } from 'next';
 import Head from 'next/head';
 import Link from 'next/link';
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import axios from 'axios';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+import { useAccount } from 'wagmi';
 import {
   Shield,
   ArrowLeft,
@@ -14,17 +16,17 @@ import {
   Send,
   Zap,
   ChevronDown,
+  Wallet,
 } from 'lucide-react';
 
 const ASSET_PAIRS = ['WETH/USDC', 'WBTC/USDC', 'SOL/USDC', 'WETH/USDT'];
 
 const TerminalPage: NextPage = () => {
+  const { address, isConnected } = useAccount();
+
   const [assetPair, setAssetPair] = useState('WETH/USDC');
   const [amount, setAmount] = useState('');
   const [limitPrice, setLimitPrice] = useState('');
-  const [swapperAddress, setSwapperAddress] = useState(
-    '0xInstitutionalClientWallet0000000000000000'
-  );
   const [ttlSeconds, setTtlSeconds] = useState(300);
   const [formatErc7683, setFormatErc7683] = useState(true);
   const [showLimit, setShowLimit] = useState(false);
@@ -41,6 +43,10 @@ const TerminalPage: NextPage = () => {
       toast.error('Please fill in all required fields');
       return;
     }
+    if (!isConnected || !address) {
+      toast.error('Connect your wallet first');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -48,7 +54,7 @@ const TerminalPage: NextPage = () => {
         assetPair,
         amount: (parseFloat(amount) * 1e18).toFixed(0),
         limitPrice: (parseFloat(limitPrice) * 1e6).toFixed(0),
-        swapperAddress,
+        swapperAddress: address,
         ttlSeconds,
       });
 
@@ -86,13 +92,11 @@ const TerminalPage: NextPage = () => {
         />
       </Head>
 
-      {/* Aurora background orbs */}
       <div className="aurora-orb aurora-orb-1" />
       <div className="aurora-orb aurora-orb-2" />
       <div className="aurora-orb aurora-orb-3" />
 
       <div className="min-h-screen relative">
-        {/* Nav */}
         <nav className="nav-glass flex items-center justify-between px-8 py-4 relative z-10">
           <Link
             href="/"
@@ -102,12 +106,11 @@ const TerminalPage: NextPage = () => {
             Back to Overview
           </Link>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="pulse-ring pulse-ring-settle">
-                <span className="dot" />
-              </span>
-              <span className="badge badge-active">Gateway Online</span>
-            </div>
+            <ConnectButton
+              showBalance={false}
+              chainStatus="icon"
+              accountStatus="address"
+            />
             <Link href="/mempool">
               <button className="text-sm px-4 py-1.5 rounded-lg border border-intent-500/30 text-intent-300 hover:border-intent-400/50 hover:shadow-[0_0_16px_rgba(6,182,212,0.15)] transition-all">
                 View Mempool →
@@ -121,7 +124,6 @@ const TerminalPage: NextPage = () => {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            {/* Page Header */}
             <div className="mb-10">
               <div className="flex items-center gap-2 mb-1 text-xs text-slate-600 font-mono uppercase tracking-widest">
                 <Link href="/" className="hover:text-slate-400 transition-colors">Overview</Link>
@@ -148,7 +150,6 @@ const TerminalPage: NextPage = () => {
             <div className="grid grid-cols-3 gap-5">
               {/* Main Form */}
               <div className="col-span-2 glass-card p-7">
-                {/* Form header */}
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-white font-semibold flex items-center gap-2 text-sm uppercase tracking-wider">
                     <Lock size={14} className="text-zk-400" />
@@ -182,8 +183,27 @@ const TerminalPage: NextPage = () => {
                   </div>
                 )}
 
+                {/* Wallet connection banner */}
+                {!isConnected && (
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/20 mb-6">
+                    <Wallet size={14} className="text-yellow-400 flex-shrink-0" />
+                    <span className="text-yellow-300 text-xs">
+                      Connect your wallet to use your real Sepolia address as settlement destination.
+                    </span>
+                  </div>
+                )}
+                {isConnected && address && (
+                  <div className="flex items-center gap-2.5 p-3 rounded-xl bg-settle-500/8 border border-settle-500/20 mb-6">
+                    <span className="pulse-ring pulse-ring-settle flex-shrink-0">
+                      <span className="dot" style={{ width: '6px', height: '6px' }} />
+                    </span>
+                    <span className="text-settle-300 text-xs font-mono">
+                      Settlement wallet: {address}
+                    </span>
+                  </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* Section overline */}
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5">
                     Trade Parameters
                   </div>
@@ -252,7 +272,6 @@ const TerminalPage: NextPage = () => {
                     />
                   </div>
 
-                  {/* Section overline */}
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5 pt-1">
                     Privacy & Commitment
                   </div>
@@ -295,24 +314,8 @@ const TerminalPage: NextPage = () => {
                     </p>
                   </div>
 
-                  {/* Section overline */}
                   <div className="text-xs font-semibold text-slate-600 uppercase tracking-widest pb-1 border-b border-white/5 pt-1">
                     Settlement
-                  </div>
-
-                  {/* Swapper Address */}
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">
-                      Settlement Wallet
-                    </label>
-                    <input
-                      id="swapper-address"
-                      type="text"
-                      value={swapperAddress}
-                      onChange={(e) => setSwapperAddress(e.target.value)}
-                      className="input-sovereign font-mono text-xs"
-                      required
-                    />
                   </div>
 
                   {/* TTL */}
@@ -338,13 +341,17 @@ const TerminalPage: NextPage = () => {
                   <button
                     type="submit"
                     id="submit-intent-btn"
-                    disabled={loading}
-                    className="btn-primary w-full mt-3 flex items-center justify-center gap-2 py-3.5 text-sm font-semibold"
+                    disabled={loading || !isConnected}
+                    className="btn-primary w-full mt-3 flex items-center justify-center gap-2 py-3.5 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? (
                       <span className="flex items-center gap-2">
                         <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />{' '}
                         Submitting to Sovereign Pool...
+                      </span>
+                    ) : !isConnected ? (
+                      <span className="flex items-center gap-2">
+                        <Wallet size={16} /> Connect Wallet to Submit
                       </span>
                     ) : (
                       <span className="flex items-center gap-2">

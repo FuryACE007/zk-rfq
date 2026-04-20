@@ -6,6 +6,7 @@ import {
   EssentialSolution,
   SolutionData,
 } from '../essential/essential.service';
+import { EvmSettlementService } from '../evm/evm-settlement.service';
 import {
   CrossChainOrder,
   RfqOrderData,
@@ -33,6 +34,7 @@ export class IntentsService {
 
   constructor(
     private readonly essential: EssentialService,
+    private readonly evmSettlement: EvmSettlementService,
     private readonly events: EventEmitter2
   ) {}
 
@@ -68,8 +70,8 @@ export class IntentsService {
     const nonce = BigInt(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
     const orderData: RfqOrderData = {
       assetPair: dto.assetPair,
-      sourceChainId: 0, // Essential (non-EVM)
-      destinationChainId: 0, // Essential (non-EVM)
+      sourceChainId: 11155111, // Sepolia (ERC-20 tokens live here)
+      destinationChainId: 11155111, // Sepolia (settlement happens here)
       minFillBps: 9500, // 95% minimum fill
       fillDeadline: expiresAt,
       limitPriceCommitment: `0x${limitPriceCommitment}`,
@@ -77,10 +79,10 @@ export class IntentsService {
     };
 
     const order: CrossChainOrder = {
-      settlementContract: '0x0000000000000000000000000000000000000000', // Essential contract (zero address placeholder)
+      settlementContract: process.env.SETTLEMENT_CONTRACT || '0x0000000000000000000000000000000000000000',
       swapper: dto.swapperAddress,
       nonce,
-      originChainId: 0, // Essential (non-EVM, native)
+      originChainId: 11155111, // Sepolia
       initiateDeadline: now,
       fillDeadline: expiresAt,
       orderData,
@@ -95,7 +97,7 @@ export class IntentsService {
           token: dto.assetPair.split('/')[1],
           amount: BigInt(0), // Determined by solver aggregate quote
           recipient: dto.swapperAddress,
-          chainId: 0,
+          chainId: 11155111,
         },
       ],
     };
@@ -143,9 +145,23 @@ export class IntentsService {
       }
     } else {
       this.logger.warn(
-        `⚠️  No Essential contract deployed. Intent stored locally for development. ` +
-          `Deploy with: pint build && POST /deploy-contract`
+        'No Essential contract deployed. Intent stored locally for development. ' +
+          'Deploy with: pint build && POST /deploy-contract'
       );
+    }
+
+    // Register order on Sepolia settlement contract (parallel to Essential)
+    if (this.evmSettlement.isConfigured()) {
+      const sepoliaResult = await this.evmSettlement.registerOrder(
+        orderHash,
+        dto.swapperAddress,
+        dto.amount,
+      );
+      if (sepoliaResult) {
+        this.logger.log(
+          `Order registered on Sepolia: ${sepoliaResult.txHash}`,
+        );
+      }
     }
 
     // Emit event for any local listeners (e.g., WebSocket push to frontend)

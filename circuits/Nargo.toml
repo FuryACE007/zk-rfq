@@ -1,13 +1,2 @@
-[package]
-name = "blind_aggregate_matcher"
-type = "bin"
-authors = ["ZK-RFQ Gateway Research"]
-compiler_version = ">=0.30.0"
-description = """
-Blind Aggregate Matcher: A ZK circuit that proves a multi-chain aggregate price
-is correctly derived from private DEX quotes and satisfies an institutional limit
-without revealing individual prices, pool routing, or the limit price itself.
-"""
-
-[dependencies]
-# No external dependencies — all primitives are built into Noir's stdlib
+[workspace]
+members = ["blind_aggregate_matcher", "aggregate_derivation", "limit_check"]

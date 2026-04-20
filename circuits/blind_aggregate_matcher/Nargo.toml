@@ -1,0 +1,13 @@
+[package]
+name = "blind_aggregate_matcher"
+type = "bin"
+authors = ["ZK-RFQ Gateway Research"]
+compiler_version = ">=1.0.0"
+description = """
+Blind Aggregate Matcher: Combined ZK circuit that proves a multi-chain aggregate
+price is correctly derived from private DEX quotes and satisfies an institutional
+limit without revealing individual prices, pool routing, or the limit price itself.
+This is the original combined circuit kept as reference.
+"""
+
+[dependencies]

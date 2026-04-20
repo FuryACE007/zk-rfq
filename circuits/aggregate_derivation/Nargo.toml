@@ -1,0 +1,12 @@
+[package]
+name = "aggregate_derivation"
+type = "bin"
+authors = ["ZK-RFQ Gateway Research"]
+compiler_version = ">=1.0.0"
+description = """
+Aggregate Derivation Circuit (Solver Proves): Proves that the final aggregate
+quote is the correct weighted average of private multi-chain DEX prices without
+revealing individual prices or routing weights. Protects solver routing alpha.
+"""
+
+[dependencies]

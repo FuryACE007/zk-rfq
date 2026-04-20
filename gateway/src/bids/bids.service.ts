@@ -5,6 +5,7 @@ import {
   EssentialSolution,
   SolutionData,
 } from '../essential/essential.service';
+import { SettlementService } from '../settlement/settlement.service';
 import { SubmitBidDto } from '../dto/gateway.dto';
 
 /**
@@ -25,6 +26,7 @@ export class BidsService {
 
   constructor(
     private readonly essential: EssentialService,
+    private readonly settlementService: SettlementService,
     private readonly events: EventEmitter2
   ) {}
 
@@ -91,17 +93,21 @@ export class BidsService {
 
     if (result.accepted) {
       this.logger.log(
-        `🏆 Settlement solution accepted! Order ${dto.orderHash.slice(
-          0,
-          16
-        )}... ` +
-          `settled at $${(Number(dto.finalAggregateQuote) / 1e6).toFixed(
-            4
-          )} | ` +
+        `Solver bid accepted by Essential: ${dto.orderHash.slice(0, 16)}... | ` +
+          `Quote: $${(Number(dto.finalAggregateQuote) / 1e6).toFixed(4)} | ` +
           `Block: ${result.block ?? 'pending'}`
       );
 
-      this.events.emit('settlement.completed', {
+      // Store solver proof for later on-chain settlement
+      // Sepolia settlement waits for institution's limit_check proof
+      this.settlementService.storeSolverProof(
+        dto.orderHash,
+        dto.solverAddress,
+        dto.finalAggregateQuote,
+        dto.proof,
+      );
+
+      this.events.emit('bid.accepted', {
         orderHash: dto.orderHash,
         solver: dto.solverAddress,
         aggregateQuote: dto.finalAggregateQuote,
