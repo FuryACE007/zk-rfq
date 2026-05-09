@@ -3,6 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useRouter } from 'next/router';
 import {
   ArrowLeft,
   Cpu,
@@ -10,7 +11,6 @@ import {
   XCircle,
   Clock,
   Shield,
-  RefreshCw,
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -23,229 +23,128 @@ interface LogEntry {
 
 interface Settlement {
   orderHash: string;
-  txHash: string;
-  blockNumber: number | null;
-  solver: string;
-  aggregateQuote: string;
-  simulated?: boolean;
-  timestamp: string;
-}
-
-// Demo/mock log generator for when gateway isn't running
-function generateDemoLog(tick: number): LogEntry[] {
-  const ts = new Date().toLocaleTimeString();
-  const entries: LogEntry[][] = [
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'info',
-        message:
-          '🔍 Polling Essential sovereign solution pool for active ERC-7683 intents...',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'info',
-        message: '📋 Intent found: WETH/USDC — hash 0xa3f2b1...e9d7',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'info',
-        message: '🌐 Initiating JIT multi-chain liquidity aggregation...',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'info',
-        message: '🔵 [Uniswap V3] EVM quote: $2,498.42 USDC — latency: 143ms',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'info',
-        message:
-          '🟣 [Jupiter / Solana] Solana quote: $2,495.88 USDC — latency: 267ms',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'info',
-        message: '⚖️  Optimal route: 62% Uniswap (EVM) | 38% Jupiter (Solana)',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'info',
-        message:
-          '💡 Aggregate quote computed: $2,497.38 USDC [PRIVATE DEX prices sealed]',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'proof',
-        message: '⚙️  Generating Noir ZK-proof (blind_aggregate_matcher)...',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'proof',
-        message: '   Public inputs: final_aggregate_quote = 2497380000',
-      },
-      {
-        id: `${tick}-3`,
-        timestamp: ts,
-        type: 'proof',
-        message:
-          '   Private inputs: [uniswap_price, jupiter_price, dex_weights, institutional_limit] → SEALED',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'proof',
-        message: '✅ Noir Proof Verified: Aggregate Price Met',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'success',
-        message: '📤 ZK-bid submitted to gateway — solver 0xWhitelisted...',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'success',
-        message: '🏆 Best bid selected: $2,497.38 USDC (3/3 bids received)',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'info',
-        message: '🏛️  Submitting settlement solution to Essential server...',
-      },
-    ],
-    [
-      {
-        id: `${tick}-1`,
-        timestamp: ts,
-        type: 'success',
-        message: '✅ Noir Proof Verified: Aggregate Price Met',
-      },
-      {
-        id: `${tick}-2`,
-        timestamp: ts,
-        type: 'success',
-        message: '🔄 Solution included in Essential block #12 — all Pint constraints satisfied',
-      },
-      {
-        id: `${tick}-3`,
-        timestamp: ts,
-        type: 'success',
-        message: '────────────── Settlement Complete ──────────────',
-      },
-    ],
-  ];
-
-  return entries[tick % entries.length] ?? [];
+  txHash?: string;
+  blockNumber?: number | null;
+  solver?: string;
+  aggregateQuote?: string;
+  status?: string;
+  timestamp?: string;
 }
 
 const SettlementPage: NextPage = () => {
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [settlements, setSettlements] = useState<Settlement[]>([]);
-  const [demoMode, setDemoMode] = useState(false);
-  const [demoTick, setDemoTick] = useState(0);
-  const [blockNumber, setBlockNumber] = useState<number | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const orderHashQuery =
+    typeof router.query.orderHash === 'string' ? router.query.orderHash : null;
 
-  // Auto-scroll logs
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [settlement, setSettlement] = useState<Settlement | null>(null);
+  const [blockNumber, setBlockNumber] = useState<number | null>(null);
+  const [gatewayOnline, setGatewayOnline] = useState<boolean | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
+  const seenStatuses = useRef<Set<string>>(new Set());
+
+  const pushLog = (type: LogEntry['type'], message: string) => {
+    setLogs((prev) =>
+      [
+        ...prev,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: new Date().toLocaleTimeString(),
+          type,
+          message,
+        },
+      ].slice(-80),
+    );
+  };
+
+  // Auto-scroll
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  // Demo log ticker
+  // Poll gateway health + Essential block number
   useEffect(() => {
-    if (!demoMode) return;
-    const id = setInterval(() => {
-      setDemoTick((t) => {
-        const newEntries = generateDemoLog(t);
-        setLogs((prev) => [...prev, ...newEntries].slice(-80));
-        return t + 1;
-      });
-    }, 2200);
-    return () => clearInterval(id);
-  }, [demoMode]);
-
-  // Poll Essential server block number
-  useEffect(() => {
+    let cancelled = false;
     const poll = async () => {
       try {
         const res = await axios.get('/api/health/essential-block', {
-          timeout: 2000,
+          timeout: 3000,
         });
+        if (cancelled) return;
         if (res.data.online) {
-          setBlockNumber(res.data.number);
-          if (!demoMode) {
-            setLogs((prev) =>
-              [
-                ...prev,
-                {
-                  id: `block-${Date.now()}`,
-                  timestamp: new Date().toLocaleTimeString(),
-                  type: 'info' as const,
-                  message: `📦 Essential block: ${res.data.number} — Essential server online`,
-                },
-              ].slice(-80)
-            );
-          }
+          setGatewayOnline(true);
+          setBlockNumber((prev) => {
+            if (prev !== res.data.number) {
+              pushLog(
+                'info',
+                `Essential block #${res.data.number}`,
+              );
+            }
+            return res.data.number;
+          });
+        } else {
+          setGatewayOnline(true);
+          setBlockNumber(null);
         }
       } catch {
-        if (!demoMode) {
-          setLogs((prev) =>
-            [
-              ...prev,
-              {
-                id: `no-node-${Date.now()}`,
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'warn' as const,
-                message:
-                  '⚠️  Essential server offline — run: npm run essential:up',
-              },
-            ].slice(-80)
-          );
+        if (cancelled) return;
+        setGatewayOnline(false);
+        setBlockNumber(null);
+      }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  // Poll the specific settlement if an orderHash is supplied
+  useEffect(() => {
+    if (!orderHashQuery) return;
+    let cancelled = false;
+    pushLog('info', `Tracking order ${orderHashQuery.slice(0, 16)}…`);
+    const poll = async () => {
+      try {
+        const res = await axios.get(`/api/settlement/${orderHashQuery}`, {
+          timeout: 5000,
+        });
+        if (cancelled) return;
+        const data: Settlement = res.data;
+        setSettlement(data);
+        const status = data.status ?? 'unknown';
+        if (!seenStatuses.current.has(status)) {
+          seenStatuses.current.add(status);
+          pushLog('info', `Settlement status: ${status}`);
+        }
+        if (data.txHash && !seenStatuses.current.has(`tx:${data.txHash}`)) {
+          seenStatuses.current.add(`tx:${data.txHash}`);
+          pushLog('success', `Sepolia tx: ${data.txHash}`);
+        }
+        if (
+          data.blockNumber &&
+          !seenStatuses.current.has(`blk:${data.blockNumber}`)
+        ) {
+          seenStatuses.current.add(`blk:${data.blockNumber}`);
+          pushLog('success', `Included in Sepolia block #${data.blockNumber}`);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        if (axios.isAxiosError(err) && err.response?.status === 404) {
+          // not yet settled — ignore
+        } else {
+          pushLog('warn', `Settlement query failed: ${String(err)}`);
         }
       }
     };
-
     poll();
-    const id = setInterval(poll, 10000);
-    return () => clearInterval(id);
-  }, [demoMode]);
-
-  const activateDemoMode = () => {
-    setDemoMode(true);
-    setLogs([
-      {
-        id: 'demo-start',
-        timestamp: new Date().toLocaleTimeString(),
-        type: 'info',
-        message:
-          '🚀 Demo Mode activated — simulating full ZK-RFQ settlement flow',
-      },
-    ]);
-  };
+    const id = setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [orderHashQuery]);
 
   const logColorClass = (type: LogEntry['type']) => {
     const map: Record<string, string> = {
@@ -261,20 +160,10 @@ const SettlementPage: NextPage = () => {
   return (
     <>
       <Head>
-        <title>Settlement Monitor — ZK-RFQ Sovereign Gateway</title>
-        <meta
-          name="description"
-          content="Monitor the Essential declarative settlement server. Watch Noir proof verification and solution inclusion in real-time."
-        />
+        <title>Settlement Monitor — ZK-RFQ</title>
       </Head>
 
-      {/* Aurora background orbs */}
-      <div className="aurora-orb aurora-orb-1" />
-      <div className="aurora-orb aurora-orb-2" />
-      <div className="aurora-orb aurora-orb-3" />
-
       <div className="min-h-screen relative">
-        {/* Nav */}
         <nav className="nav-glass flex items-center justify-between px-8 py-4 relative z-10">
           <Link
             href="/mempool"
@@ -298,21 +187,9 @@ const SettlementPage: NextPage = () => {
               </div>
             )}
             <button
-              onClick={activateDemoMode}
-              id="demo-mode-btn"
-              className={`text-sm px-4 py-1.5 rounded-lg border transition-all ${
-                demoMode
-                  ? 'border-zk-500/40 text-zk-300 bg-zk-600/10'
-                  : 'border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
-              }`}
-            >
-              {demoMode ? '⚡ Demo Running' : 'Run Demo Simulation'}
-            </button>
-            <button
               onClick={() => {
                 setLogs([]);
-                setDemoMode(false);
-                setDemoTick(0);
+                seenStatuses.current.clear();
               }}
               className="text-xs px-3 py-1.5 rounded-lg border border-slate-800 text-slate-600 hover:text-slate-400 transition-all"
             >
@@ -322,12 +199,18 @@ const SettlementPage: NextPage = () => {
         </nav>
 
         <div className="relative z-10 max-w-6xl mx-auto px-6 py-10">
-          {/* Page Header */}
           <div className="mb-10">
             <div className="flex items-center gap-2 mb-1 text-xs text-slate-600 font-mono uppercase tracking-widest">
-              <Link href="/" className="hover:text-slate-400 transition-colors">Overview</Link>
+              <Link href="/" className="hover:text-slate-400 transition-colors">
+                Overview
+              </Link>
               <span>/</span>
-              <Link href="/mempool" className="hover:text-slate-400 transition-colors">Mempool</Link>
+              <Link
+                href="/mempool"
+                className="hover:text-slate-400 transition-colors"
+              >
+                Mempool
+              </Link>
               <span>/</span>
               <span className="text-slate-500">Settlement Monitor</span>
             </div>
@@ -339,16 +222,15 @@ const SettlementPage: NextPage = () => {
                 className="font-bold text-white tracking-tight"
                 style={{ fontSize: '26px', letterSpacing: '-0.02em' }}
               >
-                Local Settlement Monitor
+                Settlement Monitor
               </h1>
             </div>
             <p className="text-slate-500 text-sm ml-11">
-              Essential declarative protocol server · Noir proof verification + solution inclusion
+              Essential declarative protocol · Sepolia ZkRfqSettlement
             </p>
           </div>
 
           <div className="grid grid-cols-3 gap-5">
-            {/* Main Terminal — 2 columns */}
             <div className="col-span-2">
               <div className="terminal h-[600px] flex flex-col">
                 <div className="terminal-header">
@@ -365,14 +247,8 @@ const SettlementPage: NextPage = () => {
                     style={{ background: '#10b981', color: '#10b981' }}
                   />
                   <span className="ml-2 text-xs text-settle-400/70 font-mono">
-                    essential-server · Pint Declarative VM
+                    essential-server · sepolia
                   </span>
-                  {demoMode && (
-                    <span className="ml-auto flex items-center gap-1.5 text-xs text-zk-400">
-                      <RefreshCw size={9} className="animate-spin" />
-                      Live demo
-                    </span>
-                  )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
@@ -382,10 +258,10 @@ const SettlementPage: NextPage = () => {
                         <Cpu size={22} className="text-slate-600" />
                       </div>
                       <p className="text-slate-600 text-sm font-mono">
-                        Waiting for settlement activity...
+                        Waiting for settlement activity…
                       </p>
                       <p className="text-slate-700 text-xs mt-1 font-mono">
-                        Start Essential server or activate Demo Mode
+                        Approve an intent in /mempool to track it here
                       </p>
                     </div>
                   )}
@@ -408,25 +284,28 @@ const SettlementPage: NextPage = () => {
               </div>
             </div>
 
-            {/* Side Panel */}
             <div className="space-y-4">
-              {/* Node Status */}
               <div className="glass-card-settle p-5">
                 <h3 className="text-xs font-semibold text-settle-300 mb-4 uppercase tracking-widest flex items-center gap-1.5">
                   <Shield size={11} />
-                  Infrastructure Status
+                  Infrastructure
                 </h3>
                 <div className="space-y-1">
                   {[
                     {
-                      label: 'Essential Server',
+                      label: 'Gateway API',
                       status:
-                        blockNumber !== null ? 'Connected' : 'Offline',
-                      ok: blockNumber !== null,
-                      accent: blockNumber !== null ? '#10b981' : '#f43f5e',
+                        gatewayOnline === null
+                          ? 'Checking…'
+                          : gatewayOnline
+                          ? 'Online'
+                          : 'Offline',
+                      ok: gatewayOnline === true,
+                      accent:
+                        gatewayOnline === false ? '#f43f5e' : '#06b6d4',
                     },
                     {
-                      label: 'Block Builder',
+                      label: 'Essential Server',
                       status:
                         blockNumber !== null
                           ? `Block #${blockNumber}`
@@ -434,14 +313,14 @@ const SettlementPage: NextPage = () => {
                       ok: blockNumber !== null,
                       accent: blockNumber !== null ? '#10b981' : '#f43f5e',
                     },
-                    { label: 'Noir Prover', status: 'PoC Mock Mode', ok: true, accent: '#8b5cf6' },
                     {
-                      label: 'Gateway API',
-                      status: 'Localhost:4000',
-                      ok: true,
-                      accent: '#06b6d4',
+                      label: 'Sepolia RPC',
+                      status:
+                        gatewayOnline === true ? 'via Gateway' : 'Unknown',
+                      ok: gatewayOnline === true,
+                      accent:
+                        gatewayOnline === true ? '#10b981' : '#f43f5e',
                     },
-                    { label: 'Public RPC', status: 'Not required', ok: true, accent: '#10b981' },
                   ].map((row) => (
                     <div
                       key={row.label}
@@ -469,7 +348,47 @@ const SettlementPage: NextPage = () => {
                 </div>
               </div>
 
-              {/* Legend */}
+              {settlement && (
+                <div className="glass-card-settle p-5">
+                  <h3 className="text-xs font-semibold text-settle-300 mb-3 uppercase tracking-widest">
+                    Order
+                  </h3>
+                  <div className="text-xs font-mono space-y-1.5 text-slate-400">
+                    <div className="break-all">
+                      <span className="text-slate-600">hash:</span>{' '}
+                      {settlement.orderHash.slice(0, 24)}…
+                    </div>
+                    {settlement.status && (
+                      <div>
+                        <span className="text-slate-600">status:</span>{' '}
+                        <span className="text-settle-400">
+                          {settlement.status}
+                        </span>
+                      </div>
+                    )}
+                    {settlement.txHash && (
+                      <div className="break-all">
+                        <span className="text-slate-600">tx:</span>{' '}
+                        <a
+                          href={`https://sepolia.etherscan.io/tx/${settlement.txHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-zk-300 hover:underline"
+                        >
+                          {settlement.txHash.slice(0, 24)}…
+                        </a>
+                      </div>
+                    )}
+                    {settlement.blockNumber && (
+                      <div>
+                        <span className="text-slate-600">block:</span>{' '}
+                        {settlement.blockNumber}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="glass-card p-5">
                 <h3 className="text-xs font-semibold text-slate-400 mb-4 uppercase tracking-widest">
                   Log Legend
@@ -496,44 +415,6 @@ const SettlementPage: NextPage = () => {
                       {item.label}
                     </div>
                   ))}
-                </div>
-              </div>
-
-              {/* Quick Start */}
-              <div className="glass-card p-5">
-                <h3 className="text-xs font-semibold text-slate-400 mb-3 uppercase tracking-widest">
-                  Quick Start
-                </h3>
-                <div className="space-y-0.5 font-mono text-xs rounded-xl overflow-hidden border border-white/5" style={{ background: 'rgba(2,4,8,0.6)' }}>
-                  <div className="px-3 pt-3 pb-1">
-                    {[
-                      { text: '# Start Essential server', type: 'comment' },
-                      { text: 'npm run essential:up', type: 'cmd' },
-                      { text: '', type: 'spacer' },
-                      { text: '# Build & deploy contract', type: 'comment' },
-                      { text: 'npm run pint:build', type: 'cmd' },
-                      { text: 'npm run deploy:contract', type: 'cmd' },
-                      { text: '', type: 'spacer' },
-                      { text: '# Start gateway', type: 'comment' },
-                      { text: 'npm run gateway:dev', type: 'cmd' },
-                      { text: '', type: 'spacer' },
-                      { text: '# Run solver', type: 'comment' },
-                      { text: 'npm run solver:rust', type: 'cmd' },
-                    ].map((line, i) => (
-                      <div
-                        key={i}
-                        className={
-                          line.type === 'comment'
-                            ? 'text-slate-600 py-0.5'
-                            : line.type === 'spacer'
-                            ? 'h-2'
-                            : 'text-settle-400 py-0.5 pl-2 border-l border-settle-700/30'
-                        }
-                      >
-                        {line.text}
-                      </div>
-                    ))}
-                  </div>
                 </div>
               </div>
             </div>

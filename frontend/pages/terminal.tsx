@@ -19,7 +19,7 @@ import {
   Wallet,
 } from 'lucide-react';
 
-const ASSET_PAIRS = ['WETH/USDC', 'WBTC/USDC', 'SOL/USDC', 'WETH/USDT'];
+const ASSET_PAIRS = ['WETH/USDC'];
 
 const TerminalPage: NextPage = () => {
   const { address, isConnected } = useAccount();
@@ -76,9 +76,6 @@ const TerminalPage: NextPage = () => {
   const [baseA, baseB] = assetPair.split('/');
   const marketRef = {
     'WETH/USDC': 2493.27,
-    'WBTC/USDC': 67218.5,
-    'SOL/USDC': 145.62,
-    'WETH/USDT': 2491.8,
   };
   const marketPrice = marketRef[assetPair as keyof typeof marketRef] ?? 0;
 

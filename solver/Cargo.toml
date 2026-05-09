@@ -3,15 +3,13 @@ name = "zk-rfq-solver"
 version = "0.1.0"
 edition = "2021"
 description = """
-Multi-chain JIT liquidity solver for the ZK-RFQ Sovereign Gateway.
+Sepolia / Uniswap V3 JIT solver for the ZK-RFQ Sovereign Gateway.
 
 This solver:
-  1. Queries the Essential server for active RFQ intents
-  2. Fetches JIT prices from Uniswap V3 (EVM) and Jupiter (Solana)
-  3. Computes optimal cross-chain routing weights
-  4. Generates a Noir ZK proof (blind_aggregate_matcher)
-  5. Constructs an Essential Solution targeting the SettleOrder predicate
-  6. Submits to Essential server for settlement
+  1. Queries the gateway for active ERC-7683 intents
+  2. Fetches a JIT price from Uniswap V3 on Ethereum Sepolia
+  3. Generates a Noir ZK proof (aggregate_derivation)
+  4. Submits a bid to the gateway / Essential server for settlement
 """
 
 [dependencies]

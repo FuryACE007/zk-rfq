@@ -140,16 +140,6 @@ export interface ZkBid {
   proof: string;
   /** Block number at which this bid expires for JIT freshness guarantees */
   bidExpiry: number;
-  /** Multi-chain routing breakdown — percentages only, no pool addresses */
-  routingMeta: RoutingMeta;
-}
-
-/** Routing metadata revealing WHAT chains were used but not WHICH pools */
-export interface RoutingMeta {
-  evmChainIds: number[];
-  solanaPrograms: string[]; // program IDs, not pool addresses
-  evmWeightBps: number; // e.g. 6000 = 60% via EVM
-  solanaWeightBps: number; // e.g. 4000 = 40% via Solana
 }
 
 /** Settlement payload sent to the Essential server */

@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
-import * as crypto from 'crypto';
 
 /**
  * NoirProverService — Server-side Noir proof generation.
@@ -13,8 +12,8 @@ import * as crypto from 'crypto';
  * so the limit price never leaves the institution's machine.
  * For the testnet demo, server-side generation is used for simplicity.
  *
- * Requires nargo + bb CLI on PATH, or falls back to a mock proof (hex bytes)
- * suitable for use with MockVerifier-deployed contracts.
+ * Requires nargo + bb CLI on PATH. Without the toolchain, proof generation
+ * fails — the on-chain LimitCheckVerifier only accepts real UltraHonk proofs.
  */
 @Injectable()
 export class NoirProverService {
@@ -34,7 +33,7 @@ export class NoirProverService {
       this.logger.log('Noir toolchain available (nargo + bb)');
       return true;
     } catch {
-      this.logger.warn('nargo/bb not found — limit_check proof will use mock bytes (requires MockVerifier)');
+      this.logger.warn('nargo/bb not found — limit_check proof generation will fail. Install Noir toolchain to enable settlement.');
       return false;
     }
   }
@@ -62,18 +61,13 @@ export class NoirProverService {
 
     const publicInputs = [aggregateQuote];
 
-    if (this.hasToolchain) {
-      try {
-        const proof = await this.generateRealProof(institutionLimit, aggregateQuote);
-        return { proof, publicInputs };
-      } catch (e) {
-        this.logger.warn(`Real proof generation failed: ${e}. Falling back to mock.`);
-      }
+    if (!this.hasToolchain) {
+      throw new Error(
+        'Noir toolchain (nargo + bb) not installed. The on-chain LimitCheckVerifier requires real UltraHonk proofs.',
+      );
     }
 
-    // Mock proof — works only with MockVerifier-deployed contracts
-    const proof = this.generateMockProof(institutionLimit, aggregateQuote);
-    this.logger.warn('Using mock limit_check proof. Deploy with runDemo() for mock verifier support.');
+    const proof = await this.generateRealProof(institutionLimit, aggregateQuote);
     return { proof, publicInputs };
   }
 
@@ -121,11 +115,4 @@ export class NoirProverService {
     return proofBytes.toString('hex');
   }
 
-  private generateMockProof(institutionLimit: string, aggregateQuote: string): string {
-    const hash = crypto
-      .createHash('sha256')
-      .update(`${institutionLimit},${aggregateQuote},noir_limit_check_v1`)
-      .digest();
-    return hash.toString('hex');
-  }
 }
