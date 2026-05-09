@@ -1,24 +1,450 @@
 # ZK-RFQ Sovereign Gateway
 
-> A self-hosted, zero-knowledge Request-for-Quote system for institutional block trading — resolving alpha leakage without sacrificing liquidity access or compliance.
+> A self-hosted, zero-knowledge Request-for-Quote system for institutional block trading — resolving the alpha leakage trilemma without sacrificing liquidity access or compliance.
 
 ---
 
-## How It Works
+## Table of Contents
 
-An institution submits a private trade intent. Whitelisted solvers fetch a real Uniswap V3 quote on Sepolia, generate a Noir ZK proof that their aggregate price is honestly derived (without revealing which pools or prices they used), and submit a blinded bid. The institution approves — proving their limit was met — and the gateway calls `ZkRfqSettlement.settleOrder()` on Sepolia. No party ever sees the other's private value.
+1. [The Problem](#1-the-problem)
+2. [The Solution](#2-the-solution)
+3. [Design Decisions](#3-design-decisions)
+4. [System Architecture](#4-system-architecture)
+5. [ZK Circuit Design](#5-zk-circuit-design)
+6. [The Full Trade Flow](#6-the-full-trade-flow)
+7. [Component Deep Dives](#7-component-deep-dives)
+8. [Running the Demo](#8-running-the-demo)
+9. [API Reference](#9-api-reference)
+10. [Known Limitations & Roadmap](#10-known-limitations--roadmap)
 
-**Three properties in one system:**
+---
 
-| Property | Mechanism |
+## 1. The Problem
+
+When an institution wants to execute a large token swap on-chain, they face an irresolvable trilemma:
+
+```
+                       DEEP LIQUIDITY
+                       (competitive fill)
+                            /\
+                           /  \
+                          /    \
+              ALPHA PROTECTION  ←→  COMPLIANCE
+              (no front-running)     (audit trail)
+```
+
+**You can pick two. Not three.**
+
+### Why existing approaches fail
+
+| Approach | Liquidity | Alpha Protection | Compliance |
+|---|---|---|---|
+| Broadcast RFQ to market makers | ✅ | ❌ Front-running, alpha leakage | ❌ Centralised intermediary |
+| Private bilateral OTC | ✅ | ✅ | ❌ Counterparty trust, no audit trail |
+| On-chain AMM (Uniswap etc.) | ⚠️ MEV + slippage | ❌ Public mempool | ✅ |
+| Centralised dark pool | ✅ | ✅ | ❌ Single point of failure, trust required |
+
+The root issue is that the moment you tell a counterparty your intent — the token, size, and direction — you've given them information they can act on before your trade executes. This is alpha leakage, and it costs institutional traders millions per year.
+
+---
+
+## 2. The Solution
+
+ZK-RFQ resolves all three simultaneously using three primitives in combination:
+
+### Primitive 1: ERC-7683 Open Intent Standard
+The institution's trade intent is encoded as an ERC-7683 `CrossChainOrder` — a universal, standardised format. Any whitelisted solver can parse and respond to it without a proprietary API integration. This gives access to a competitive market of market makers, driving better prices.
+
+Critically: the intent contains a **commitment** to the limit price (`keccak256(limitPrice || salt)`) — not the limit price itself. Solvers never learn what price the institution would accept.
+
+### Primitive 2: Noir ZK Proofs (Two-Circuit Design)
+Two separate Noir circuits provide cryptographic privacy guarantees at each step:
+
+**Circuit 1 — `aggregate_derivation` (run by the solver)**
+The solver fetches real JIT prices from Uniswap V3 on Sepolia, computes a weighted aggregate, and generates a ZK proof that the aggregate is correctly derived from real DEX prices — without revealing which pools they queried, at what prices, or what their routing weights were. Only the final `aggregate_quote` is public.
+
+**Circuit 2 — `limit_check` (run by the gateway on behalf of the institution)**
+When the institution approves a bid, the gateway generates a ZK proof that `aggregate_quote >= institution_limit`. The limit price is a private circuit witness — it never appears on-chain, never leaves the institution's trust boundary, and is never transmitted in plaintext.
+
+Both proofs share the same public input (`final_aggregate_quote`), which cryptographically binds them to the same price event.
+
+### Primitive 3: Essential Declarative Protocol (Sovereign Settlement)
+Settlement logic lives in a Pint contract on Essential — a self-hosted declarative protocol where you define valid terminal states rather than writing imperative execution logic. Essential validates solutions against the declared constraints and builds blocks autonomously. This means:
+- The institution runs their own settlement infrastructure (no third-party dependency)
+- Intent data is stored privately (Essential is not a public chain)
+- Business logic (whitelisting, TTL, no-double-settle) is enforced by the protocol, not application code
+
+The final on-chain token transfer happens on **Ethereum Sepolia** (or mainnet in production), verified by the ZK proof verifier contracts.
+
+---
+
+## 3. Design Decisions
+
+### Decision 1: Why two separate ZK circuits?
+
+We could have written a single circuit that proves both "quote is honestly derived" AND "quote >= limit". We chose two separate circuits for a critical reason: **separation of proof generation responsibility**.
+
+The `aggregate_derivation` proof is generated by the **solver** — they need to prove their own pricing is honest. The `limit_check` proof is generated by the **institution** — they need to prove their own limit was met, without revealing it to the solver or anyone else.
+
+If we merged the circuits, the solver would need the institution's limit price as a private input to their proof, which would mean the limit price would have to leave the institution's machine. Keeping them separate means neither party ever learns the other's private value.
+
+### Decision 2: Why Essential + Sepolia (dual-layer)?
+
+We run two separate layers rather than settling entirely on-chain:
+
+- **Essential (private layer)**: Stores the intent pool, validates business logic (solver whitelist, TTL, no-double-settle), and builds blocks. This is self-hosted — the institution controls the infrastructure. No public mempool means no front-running on the intent level.
+- **Sepolia (public layer)**: Final ERC-20 token transfers only. The ZK proofs are verified here because on-chain verification provides a cryptographic audit trail that neither party can dispute. This satisfies the compliance requirement.
+
+Essential's declarative model also gives us competing solver support for free — the block builder runs an inclusion auction where solvers with better quotes win naturally.
+
+### Decision 3: Why ERC-7683 instead of a proprietary intent format?
+
+ERC-7683 is an emerging standard for cross-chain intents. By conforming to it, solvers don't need custom integrations per gateway — they can parse our intents using the same infrastructure they use for other ERC-7683 compliant systems. This creates a permissionless solver market around a standard.
+
+It also provides a clean abstraction boundary: the `CrossChainOrder` struct is what gets hashed and committed to. The ZK proof extensions (`ZkBid`) are layered on top without modifying the base standard.
+
+### Decision 4: Why server-side limit_check proof generation (for now)?
+
+The production design calls for the `limit_check` proof to be generated **client-side in the institution's browser** using `@noir-lang/noir_js` WASM. The limit price would never leave browser memory.
+
+For the current testnet demo, proof generation runs server-side in the NestJS gateway for simplicity (no browser WASM bundle required). This is explicitly flagged in the code and the known limitations section. Moving to client-side proof generation is a near-term priority.
+
+### Decision 5: Why keep the `jupiter_price` field in the Noir circuit with a zero shim?
+
+The `aggregate_derivation` circuit was designed with a two-source architecture (`uniswap_price`, `jupiter_price`, `dex_weights[2]`). The current demo runs Sepolia-only with Uniswap V3, so Jupiter is not available.
+
+Rather than recompile the circuit (which regenerates the Solidity verifier contract and requires a new deployment), we pass `jupiter_price = 0` and `dex_weights = [10000, 0]`. The circuit still satisfies all constraints — `0 * 0 / 10000 = 0` and the aggregate collapses to `uniswap_price * 10000 / 10000 = uniswap_price`. When we add a second EVM source later, we update the solver logic without touching the circuit or the on-chain verifier.
+
+### Decision 6: Why Rust for the solver?
+
+The solver is the most performance-sensitive component — it needs to poll for intents, fetch real JIT prices from an EVM RPC node, run a Barretenberg UltraHonk proof via CLI, and submit solutions under time pressure. Rust gives us:
+- Native Alloy integration for Uniswap V3 `QuoterV2` calls
+- `tokio` async runtime for concurrent operations
+- Safe FFI boundary for Barretenberg proof generation via `bb` CLI
+- Minimal latency overhead vs. Node.js for the polling loop
+
+### Decision 7: Why Pint predicates instead of Solidity on Essential?
+
+Essential uses a declarative constraint language (Pint) rather than imperative execution (EVM bytecode). You declare what valid state transitions look like — the constraint solver and block builder figure out how to get there. This means:
+- No re-entrancy bugs (no execution order to exploit)
+- No transaction ordering manipulation (state mutations are atomic)
+- Business logic expressed as formal constraints, not code paths
+- Built-in competing solver support via the block builder's inclusion auction
+
+---
+
+## 4. System Architecture
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                     INSTITUTION BROWSER                         │
+│                                                                 │
+│  /terminal          /mempool              /settlement           │
+│  Submit intent   →  Review bids        →  Monitor settlement   │
+│  (limit price       Approve & settle      Real-time Essential  │
+│   committed,        (generates proof)      block + Sepolia tx) │
+│   never stored)                                                 │
+└──────────────────────────┬─────────────────────────────────────┘
+                           │ REST (proxied via Next.js /api)
+┌──────────────────────────▼─────────────────────────────────────┐
+│                      NESTJS GATEWAY                             │
+│  :4000                                                          │
+│                                                                 │
+│  IntentsService         → ERC-7683 order construction          │
+│  BidsService            → Essential solution building          │
+│  SettlementService      → Two-proof orchestration              │
+│  NoirProverService      → limit_check proof (server-side)      │
+│  EvmSettlementService   → Sepolia wallet + contract calls      │
+└──────┬───────────────────────────────────┬──────────────────────┘
+       │ REST                              │ REST
+       │                                  │
+┌──────▼────────────────┐    ┌────────────▼───────────────────────┐
+│    RUST SOLVER        │    │       ESSENTIAL SERVER              │
+│                       │    │       :3553 (Docker)                │
+│  Polls /intents/active│    │                                     │
+│  Uniswap V3 QuoterV2  │    │  Pint contract (SubmitOrder,        │
+│  Noir bb prover       │    │  SettleOrder, GovernanceWhitelist)  │
+│  (aggregate_derivation│    │  Block builder + intent pool        │
+│   circuit)            │    │  Private state storage              │
+│  POST /bids           │    │                                     │
+└───────────────────────┘    └────────────────────────────────────┘
+       │
+       │ ethers.js (Alloy)
+┌──────▼────────────────────────────────────────────────────────┐
+│                   ETHEREUM SEPOLIA                              │
+│                                                                 │
+│  ZkRfqSettlement.sol         — registerOrder / settleOrder     │
+│  AggregateDerivationVerifier — verifies solver proof           │
+│  LimitCheckVerifier          — verifies institution proof      │
+│  MockWETH + MockUSDC         — test tokens (free faucet)       │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Summary
+
+```
+Institution                  Gateway                Essential            Sepolia
+    │                           │                      │                    │
+    │── POST /intents ─────────►│                      │                    │
+    │   (assetPair, amount,     │── solution ─────────►│                    │
+    │    limitPrice,            │   (SubmitOrder pred.) │                    │
+    │    swapperAddress)        │                      │── block built      │
+    │                           │                      │                    │
+    │◄─ { orderHash } ─────────│◄─ accepted ──────────│                    │
+    │                           │                      │                    │
+    │   [Solver polls]          │◄── GET /intents/active ─────────────────  │
+    │                           │    [returns intent]                        │
+    │                           │                      │                    │
+    │                           │   [Solver: Uniswap V3 QuoterV2]            │
+    │                           │   [Solver: bb prove aggregate_derivation]  │
+    │                           │◄─ POST /bids ────────────────────────────  │
+    │                           │   (orderHash, quote,  │                    │
+    │                           │    proof, bidExpiry)  │                    │
+    │                           │── solution ─────────►│                    │
+    │                           │   (SettleOrder pred.) │── block built      │
+    │                           │                      │                    │
+    │── GET /mempool ──────────►│                      │                    │
+    │◄─ [bids with masked       │                      │                    │
+    │    aggregate prices]      │                      │                    │
+    │                           │                      │                    │
+    │── POST /settlement/ ─────►│                      │                    │
+    │   prove-and-settle        │── bb prove limit_check                    │
+    │   (orderHash,             │   (institutionLimit → private)             │
+    │    institutionLimit)      │                      │                    │
+    │                           │── settleOrder() ─────────────────────────►│
+    │                           │   (solverProof,       │                    │
+    │                           │    institutionProof,  │                    │
+    │                           │    publicInputs)      │                    │
+    │                           │                      │◄── proofs verified │
+    │                           │                      │    tokens transferred
+    │◄─ { txHash } ────────────│                      │                    │
+```
+
+---
+
+## 5. ZK Circuit Design
+
+Circuits live in `circuits/` as a Nargo workspace. Each is a standalone Noir program compiled with `nargo` and proven with Barretenberg (`bb`).
+
+### `aggregate_derivation` — The Solver's Privacy Guarantee
+
+**Purpose:** Prove that the final aggregate quote is honestly derived from real DEX prices, without revealing the individual prices, routing weights, or pool addresses.
+
+**Location:** `circuits/aggregate_derivation/src/main.nr`
+
+```
+fn main(
+    uniswap_price: Field,         // private: real Uniswap V3 spot price (1e6 fixed-point)
+    jupiter_price: Field,         // private: [shim: 0 in current Sepolia-only build]
+    dex_weights:   [Field; 2],    // private: routing weights in basis points (must sum to 10000)
+    final_aggregate_quote: pub Field  // public: the only value visible on-chain
+)
+```
+
+**Constraints enforced by the circuit:**
+1. `dex_weights[0] + dex_weights[1] == 10000` — weights must sum to 100%, preventing phantom routing claims
+2. `uniswap_price != 0` and `jupiter_price != 0` — guards against failed JIT fetches
+3. `(uniswap_price * weights[0] + jupiter_price * weights[1]) / 10000 == final_aggregate_quote` — proves the aggregate is correctly computed
+
+**What the verifier learns:** Only `final_aggregate_quote`. Everything else is sealed.
+
+**Who runs it:** The Rust solver, via `bb prove` CLI. The proof is attached to the solver's bid (`POST /bids`).
+
+---
+
+### `limit_check` — The Institution's Privacy Guarantee
+
+**Purpose:** Prove that the solver's aggregate quote meets the institution's limit price, without revealing what the limit price is.
+
+**Location:** `circuits/limit_check/src/main.nr`
+
+```
+fn main(
+    institutional_limit: Field,       // private: institution's secret floor price
+    final_aggregate_quote: pub Field  // public: same value as aggregate_derivation output
+)
+```
+
+**Constraints enforced by the circuit:**
+1. `final_aggregate_quote >= institutional_limit` — the trade is profitable for the institution
+
+**Binding property:** Both circuits declare `final_aggregate_quote` as a public input. On-chain, `ZkRfqSettlement` passes the same `publicInputs` array to both verifiers. If a solver tampered with the aggregate between proof generation and on-chain submission, `AggregateDerivationVerifier` would reject it. If the gateway fabricated a different aggregate for the `limit_check`, `LimitCheckVerifier` would verify a different value than what the solver proved, and the cross-check would fail.
+
+**Who runs it:** In the current demo, the gateway's `NoirProverService` runs this server-side. In production, it runs client-side in the institution's browser via `@noir-lang/noir_js` WASM — the limit price never leaves browser memory.
+
+---
+
+### Field Arithmetic Convention
+
+All prices use **1e6 fixed-point**: `2492_000000` represents `$2,492.000000 USDC`.
+
+All weights use **basis points**: `6000` = 60%, `10000` = 100%.
+
+This convention is consistent across circuits, the Rust solver, the gateway, the Solidity contract (`aggregateQuote` in `1e18`-scaled math), and the frontend display.
+
+---
+
+## 6. The Full Trade Flow
+
+### Step 1 — Institution Submits Intent
+
+The institution opens `/terminal`, connects their MetaMask wallet on Sepolia, and fills in:
+- Asset pair: `WETH/USDC`
+- Amount: e.g. `1` (WETH, 18 decimals → submitted as `1e18`)
+- Limit price: e.g. `2400` (minimum USDC per WETH they'll accept, in 1e6 → submitted as `2400_000000`)
+- TTL: how many seconds the intent stays open (default 300s)
+
+**What happens in the gateway (`IntentsService`):**
+1. A random `salt` is generated and `keccak256(limitPrice || salt)` is computed — this is stored as `limitPriceCommitment`. The plaintext limit price is never persisted anywhere.
+2. The intent is encoded as an `ERC-7683 CrossChainOrder` with `orderData.limitPriceCommitment` set.
+3. An Essential `Solution` is constructed targeting the `SubmitOrder` predicate in the Pint contract, carrying the order fields as decision variables.
+4. The solution is submitted to the Essential server. Essential validates it against the predicate's constraints (no duplicate, positive amount, non-zero commitment) and includes it in the next block.
+5. The gateway also calls `ZkRfqSettlement.registerOrder()` on Sepolia so the settlement contract is aware of the order when settlement is requested later.
+6. The `orderHash` is returned to the frontend.
+
+---
+
+### Step 2 — Solver Fetches and Bids
+
+The Rust solver runs a polling loop (`GET /intents/active` every 5 seconds). For each new intent:
+
+1. **JIT price fetch:** The solver calls Uniswap V3's `QuoterV2.quoteExactInputSingle()` on Sepolia to get a real-time price for the WETH/USDC pool. This is a real on-chain call — no simulated prices.
+
+2. **Aggregate computation:** Currently 100% Uniswap V3 (the second source shim collapses to zero). The `final_aggregate_quote` equals the Uniswap spot price.
+
+3. **Noir witness construction:** The solver builds the private witness:
+   ```
+   uniswap_price        = <real QuoterV2 result>
+   jupiter_price        = 0           // shim
+   dex_weights          = [10000, 0]  // shim: 100% EVM
+   final_aggregate_quote = uniswap_price
+   ```
+   The aggregate is the only public value. Everything else is sealed.
+
+4. **Proof generation:** `bb prove` is invoked via CLI against the compiled `aggregate_derivation` circuit. Barretenberg generates an UltraHonk proof. If `bb` is not installed, a mock proof is generated for testing (the on-chain verifier will reject it).
+
+5. **Bid submission:** The solver calls `POST /bids` with `{ orderHash, solverAddress, finalAggregateQuote, proof, bidExpiry }`. The gateway stores the solver proof and submits a `SettleOrder` solution to Essential. Essential validates it (solver must be whitelisted, order must be active, quote positive, proof flag set) and includes it in the next block.
+
+---
+
+### Step 3 — Institution Reviews and Approves
+
+The institution opens `/mempool` and sees the intent with the solver's bid. The bid shows:
+- The masked `finalAggregateQuote` (the price they'll receive)
+- The solver's address (pseudonymous)
+- Source: `Uniswap V3 · Sepolia`
+- `Routing Masked` badge — confirming the ZK mask was applied
+
+The institution enters their limit price and clicks **Approve & Settle**. This calls `POST /settlement/prove-and-settle` with `{ orderHash, institutionLimit }`.
+
+---
+
+### Step 4 — Gateway Generates the Second Proof and Settles
+
+In `SettlementService.proveAndSettle()`:
+
+1. The gateway retrieves the stored `solverProof` and `aggregateQuote` for this order.
+2. It validates that `aggregateQuote >= institutionLimit` before even attempting proof generation (fast-fail to avoid wasted CPU).
+3. `NoirProverService` writes a `Prover.toml` and runs `nargo execute --package limit_check` followed by `bb prove`. The `institutionLimit` is a private circuit input — it is written to a temp file, used for proof generation, and never stored or logged.
+4. The gateway calls `ZkRfqSettlement.settleOrder()` on Sepolia with:
+   - `orderHash`
+   - `solver` address
+   - `aggregateQuote` (as `uint256`)
+   - `solverProof` (bytes)
+   - `institutionProof` (bytes)
+   - `publicInputs` — `[bytes32(aggregateQuote)]`, shared by both proofs
+
+---
+
+### Step 5 — On-Chain Settlement
+
+`ZkRfqSettlement.settleOrder()` on Sepolia:
+
+1. Checks the order is registered and not yet settled.
+2. Calls `AggregateDerivationVerifier.verify(solverProof, publicInputs)` — if the solver fabricated the aggregate, this fails.
+3. Calls `LimitCheckVerifier.verify(institutionProof, publicInputs)` — if the institution's limit wasn't met, this fails.
+4. Marks `settled[orderHash] = true` (replay protection).
+5. Executes atomic ERC-20 transfers:
+   - `WETH.safeTransferFrom(institution → solver, wethAmount)` — solver receives the input tokens
+   - `USDC.safeTransferFrom(solver → institution, usdcAmount)` — institution receives the output
+   - `usdcAmount = wethAmount * aggregateQuote / 1e18` (18-decimal WETH scaled to 6-decimal USDC)
+6. Emits `OrderSettled(orderHash, swapper, solver, wethAmount, usdcReceived, aggregateQuote)`.
+
+The frontend polls `GET /settlement/:orderHash` until the `txHash` appears, then renders the Etherscan link.
+
+---
+
+## 7. Component Deep Dives
+
+### Pint Contract (`predicates/`)
+
+Three predicates manage the full lifecycle:
+
+**`SubmitOrder`** — creates an intent in Essential storage. Constraints: no duplicate orderHash, positive amount, non-zero limit commitment, non-zero swapper. Post-state: order fields written, `order_is_active = true`.
+
+**`SettleOrder`** — transitions an intent to settled. Constraints: order must be active, solver must be whitelisted, not already settled, positive aggregate quote, proof verified flag set. Post-state: `order_is_active = false`, settlement fields written.
+
+**`GovernanceUpdateWhitelist`** — adds/removes solvers. Constraints: caller must match `governance_key` stored in Essential. This provides KYC/AML enforcement at the protocol level.
+
+Essential validates these constraints before including any solution in a block. There is no way for application code to bypass them.
+
+---
+
+### Gateway (`gateway/src/`)
+
+| Module | Responsibility |
 |---|---|
-| Deep liquidity | ERC-7683 open intent standard |
-| Alpha protection | Noir UltraHonk ZK proofs — routing stays private |
-| Compliance / sovereignty | Essential declarative protocol — self-hosted settlement |
+| `IntentsService` | ERC-7683 order construction, limit price commitment, Essential `SubmitOrder` solution |
+| `BidsService` | Essential `SettleOrder` solution from solver bid |
+| `SettlementService` | Solver proof storage, two-proof orchestration, EVM call |
+| `NoirProverService` | `nargo execute` + `bb prove` for `limit_check` circuit |
+| `EvmSettlementService` | ethers.js wallet, `registerOrder` + `settleOrder` contract calls |
+| `EssentialService` | Essential REST API wrapper (deploy, submit solutions, query state) |
+
+The `BidsService` dry-runs solutions against Essential before submitting (`checkSolution`) to provide early rejection feedback to solvers.
 
 ---
 
-## Quick Start (Testnet Demo)
+### Settlement Contract (`contracts/src/ZkRfqSettlement.sol`)
+
+Key design choices:
+- **Immutable verifiers** — `aggregateVerifier` and `limitVerifier` are set at construction and cannot be changed. Proof system upgrades require a new deployment.
+- **`Ownable` + `Pausable`** — the gateway wallet is the owner. Emergency pause halts all settlement without destroying stored state.
+- **`ReentrancyGuard`** — atomic WETH + USDC transfers happen within `nonReentrant`, preventing any reentrancy attack via malicious token callbacks.
+- **`settled` mapping** — simple replay protection; once an `orderHash` is settled, it can never be settled again.
+- **Shared `publicInputs`** — both proofs are verified against the same `bytes32[]` array. This is what binds the two-proof system together: the aggregate quote is proven by both parties simultaneously.
+
+---
+
+### Rust Solver (`solver/src/`)
+
+| File | Responsibility |
+|---|---|
+| `main.rs` | Polling loop, intent → bid flow, Noir witness assembly |
+| `uniswap_quoter.rs` | Alloy-based `QuoterV2.quoteExactInputSingle()` call on Sepolia |
+| `noir_prover.rs` | `Prover.toml` generation, `nargo execute`, `bb prove`, proof parsing |
+| `config.rs` | CLI args (Clap): Essential URL, gateway URL, Sepolia RPC, contract addresses |
+
+The solver falls back to mock proofs if `nargo`/`bb` are not installed, logging a clear warning. The gateway and on-chain verifier will reject mock proofs — this is intentional.
+
+---
+
+### Frontend (`frontend/pages/`)
+
+| Page | Role |
+|---|---|
+| `/` (`index.tsx`) | Landing — ConnectButton + "Open Terminal" |
+| `/terminal` | Intent submission form — amount, limit price (hidden by default), TTL |
+| `/mempool` | Live intent pool — bids with aggregate prices, approve & settle flow |
+| `/settlement` | Real-time Essential block ticker, per-order settlement status, Etherscan link |
+
+The frontend proxies all API calls via `pages/api/[...path].ts`, which forwards them to `http://localhost:4000`. This avoids CORS issues and means the gateway URL is configurable server-side via `NEXT_PUBLIC_GATEWAY_URL`.
+
+Wallet connectivity uses **RainbowKit + Wagmi**, configured to Sepolia only (`lib/wagmi.ts`). The `ConnectButton` handles chain switching automatically — if a user is on mainnet, they're prompted to switch to Sepolia before submitting.
+
+---
+
+## 8. Running the Demo
 
 ### Prerequisites
 
@@ -28,41 +454,52 @@ An institution submits a private trade intent. Whitelisted solvers fetch a real 
 | Rust | ≥ 1.75 | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
 | Foundry | latest | `curl -L https://foundry.paradigm.xyz \| bash && foundryup` |
 | Docker | any | [docker.com](https://docker.com) |
-| Nargo + bb | 0.32.0 / 0.55.0 | `noirup -v 0.32.0` then `bbup -v 0.55.0` |
+| Nargo | 0.32.0 | `noirup -v 0.32.0` |
+| Barretenberg (`bb`) | 0.55.0 | `bbup -v 0.55.0` |
 
-> Nargo and bb are only required for real on-chain settlement proofs. You can run the full UI flow and see solver bids without them — settlement will fail at the proof step until they're installed.
+> **Nargo and bb are required for real on-chain settlement.** You can run the full UI flow and observe solver bids without them — settlement will fail at the proof step with a clear error.
 
 ---
 
-### 1. Clone and install
+### Step 1 — Clone and install
 
 ```bash
 git clone <repo-url>
 cd zk-rfq
 
-# Install all packages
 (cd gateway && npm install)
 (cd frontend && npm install)
 (cd solver && cargo build --release)
 (cd contracts && forge install)
 ```
 
-### 2. Deploy contracts to Sepolia
+---
+
+### Step 2 — Deploy contracts to Sepolia
 
 ```bash
 export SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
 export DEPLOYER_PRIVATE_KEY=0x...
 
 cd contracts
-forge script script/Deploy.s.sol --rpc-url $SEPOLIA_RPC_URL \
-  --private-key $DEPLOYER_PRIVATE_KEY --broadcast
+forge script script/Deploy.s.sol \
+  --rpc-url $SEPOLIA_RPC_URL \
+  --private-key $DEPLOYER_PRIVATE_KEY \
+  --broadcast
 ```
 
-Copy the five addresses printed at the end into `gateway/.env`:
+The script deploys:
+- `MockWETH` + `MockUSDC` (test tokens — free to mint, no real money)
+- `AggregateDerivationVerifier` + `LimitCheckVerifier` (Barretenberg-generated Solidity verifiers)
+- `ZkRfqSettlement` (settlement contract, takes the verifier addresses)
+
+It mints **100 MockWETH** to `$INSTITUTION_ADDRESS` (defaults to deployer) and **1,000,000 MockUSDC** to `$SOLVER_ADDRESS` (defaults to deployer).
+
+Copy the five addresses from the output into `gateway/.env`:
 
 ```env
 SEPOLIA_RPC_URL=https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY
-GATEWAY_PRIVATE_KEY=0x...your_deployer_key...
+GATEWAY_PRIVATE_KEY=0x...
 
 SETTLEMENT_CONTRACT=0x...
 MOCK_WETH_ADDRESS=0x...
@@ -75,34 +512,44 @@ ESSENTIAL_URL=http://localhost:3553
 CIRCUITS_PATH=../../circuits
 ```
 
-> The deploy script mints 100 MockWETH to your wallet and 1,000,000 MockUSDC to the solver. No real money required.
+---
 
-### 3. Start Essential (private intent pool)
+### Step 3 — Start Essential
+
+Essential is the private intent pool. Run it in Docker:
 
 ```bash
 # From repo root
 docker compose up -d
+docker compose ps   # wait for "healthy"
 ```
 
-Wait for `zk-rfq-essential-server` to show healthy (`docker compose ps`).
-
-### 4. Deploy Pint contract to Essential
+Then deploy the Pint contract to Essential and register the solver whitelist:
 
 ```bash
 cd predicates && pint build
 cd ../solver && cargo run -- --deploy
 ```
 
-### 5. Run the gateway
+---
+
+### Step 4 — Run the gateway
 
 ```bash
 cd gateway
-cp .env.example .env   # then fill in values from step 2
 npm run start:dev
 # Running on http://localhost:4000
 ```
 
-### 6. Run the solver
+Test it:
+```bash
+curl http://localhost:4000/health
+# { "gateway": "operational", "essential": "connected", ... }
+```
+
+---
+
+### Step 5 — Run the solver
 
 ```bash
 cd solver
@@ -110,11 +557,19 @@ cargo run --release -- \
   --sepolia-rpc-url $SEPOLIA_RPC_URL \
   --mock-weth-address 0x... \
   --mock-usdc-address 0x... \
-  --solver-address $YOUR_SOLVER_ADDRESS
-# Polling gateway every 5s
+  --solver-address 0x...YOUR_SOLVER_WALLET...
 ```
 
-### 7. Run the frontend
+The solver will log its polling status. You'll see:
+```
+Sepolia Uniswap V3 quotes ENABLED
+Real proof generation ENABLED (nargo + bb detected)
+Starting sovereign pool polling (every 5000ms)…
+```
+
+---
+
+### Step 6 — Run the frontend
 
 ```bash
 cd frontend
@@ -124,168 +579,124 @@ npm run dev
 
 ---
 
-## Demo Walkthrough
+### Demo Walkthrough
 
-### Step 1 — Connect wallet
+**1. Connect wallet**
 
-Open `http://localhost:3000`. Click **Open Terminal**. Connect MetaMask on **Ethereum Sepolia**.
+Open `http://localhost:3000`, click **Open Terminal**, connect MetaMask on **Ethereum Sepolia**.
 
-### Step 2 — Submit a trade intent
+**2. Approve token spend**
+
+Before submitting your first intent, approve the settlement contract to spend your MockWETH:
+```bash
+cast send $MOCK_WETH_ADDRESS \
+  "approve(address,uint256)" $SETTLEMENT_CONTRACT 100000000000000000000 \
+  --rpc-url $SEPOLIA_RPC_URL --private-key $INSTITUTION_PRIVATE_KEY
+```
+
+Do the same for MockUSDC from the solver wallet:
+```bash
+cast send $MOCK_USDC_ADDRESS \
+  "approve(address,uint256)" $SETTLEMENT_CONTRACT 1000000000000 \
+  --rpc-url $SEPOLIA_RPC_URL --private-key $SOLVER_PRIVATE_KEY
+```
+
+**3. Submit a trade intent**
 
 At `/terminal`:
-- Token pair is WETH/USDC (only pair available on testnet)
-- Enter **amount** (e.g. `1`) and a **limit price** (e.g. `2400`)
+- Amount: `1` (= 1 WETH)
+- Limit price: `2400` (minimum USDC/WETH you'll accept)
 - Click **Submit Intent**
 
-A success toast will show the `orderHash`. The intent is stored privately on Essential.
+A toast will show the `orderHash`.
 
-### Step 3 — Watch the solver respond
-
-In the solver terminal you'll see within ~5 seconds:
+**4. Watch the solver respond** (solver terminal):
 
 ```
 Fetching Uniswap V3 (Sepolia) JIT quote…
 [Uniswap V3] quote: $2493.27 USDC — depth: $1M — latency: 143ms
 Aggregate quote: $2493.2700 [Uniswap V3 only · 100% EVM]
 Building Noir witness (aggregate_derivation)…
-  PUBLIC:  final_aggregate_quote = 2493270000
-  PRIVATE: uniswap_price, dex_weights → SEALED
+   PUBLIC:  final_aggregate_quote = 2493270000
+   PRIVATE: uniswap_price, dex_weights → SEALED
 Generating Noir ZK-proof…
 REAL UltraHonk proof generated (2048 bytes)
 Bid accepted, awaiting Essential block inclusion
 ```
 
-### Step 4 — Approve and settle
+**5. Approve and settle** (at `/mempool`):
 
-At `/mempool`:
-1. Find your intent — the solver bid shows `Uniswap V3 · Sepolia` and the masked aggregate price
-2. In the **Approve & Settle** panel, enter your limit price (must be ≤ aggregate)
+1. Find your intent → see the solver's masked aggregate price
+2. Enter your limit price (must be ≤ aggregate to succeed)
 3. Click **Approve & Settle**
 
-The gateway:
-- Generates a `limit_check` Noir proof server-side (your limit stays private)
-- Calls `ZkRfqSettlement.settleOrder()` on Sepolia with both proofs
-- Both proofs verified on-chain by `AggregateDerivationVerifier` and `LimitCheckVerifier`
-
-### Step 5 — Verify settlement
-
-At `/settlement?orderHash=0x...` you'll see real Essential block ticks and — once the tx lands — a Sepolia tx hash with an Etherscan link.
-
-Or via CLI:
+**6. Verify on-chain** (at `/settlement?orderHash=0x...` or via CLI):
 
 ```bash
 cast call $SETTLEMENT_CONTRACT \
-  "isSettled(bytes32)(bool)" $ORDER_HASH \
+  "settled(bytes32)(bool)" 0x...YOUR_ORDER_HASH... \
   --rpc-url $SEPOLIA_RPC_URL
+# true
 ```
 
 ---
 
-## Architecture
+## 9. API Reference
 
-```
-┌─────────────────────────────────────────────────────┐
-│                 INSTITUTION BROWSER                  │
-│  /terminal (submit) → /mempool (approve) → /settlement│
-└──────────────────────┬──────────────────────────────┘
-                       │ REST
-┌──────────────────────▼──────────────────────────────┐
-│                   NESTJS GATEWAY                     │
-│  IntentsService  │  BidsService  │  SettlementService│
-│  NoirProverService (limit_check proof, server-side)  │
-└───┬──────────────────────────────────────────────────┘
-    │                                  │ REST
-    │  ┌───────────────────┐   ┌───────▼──────────────┐
-    │  │   RUST SOLVER     │   │  ESSENTIAL SERVER    │
-    │  │ Uniswap V3 Sepolia│   │  (private intent pool│
-    │  │ Noir bb prover    │   │   Pint predicates)   │
-    │  └───────────────────┘   └──────────────────────┘
-    │
-┌───▼─────────────────────────────────────────────────┐
-│                 ETHEREUM SEPOLIA                      │
-│  ZkRfqSettlement.sol (ERC-7683)                      │
-│  AggregateDerivationVerifier + LimitCheckVerifier    │
-│  MockWETH + MockUSDC (test tokens, free faucet)      │
-└─────────────────────────────────────────────────────┘
-```
+All endpoints are on the gateway at `http://localhost:4000`. The frontend proxies them via `/api/*`.
 
----
-
-## ZK Circuits (`circuits/`)
-
-### `aggregate_derivation` — run by the solver
-Proves the final aggregate quote was honestly derived from real DEX prices without revealing which pools or prices were used.
-
-- Public inputs: `final_aggregate_quote`
-- Private inputs: `uniswap_price`, `dex_weights`
-
-### `limit_check` — run by the gateway (on behalf of institution)
-Proves the institution's limit price was met: `aggregate >= limit`.
-
-- Public inputs: `final_aggregate_quote`
-- Private inputs: `institutional_limit`
-
----
-
-## Project Structure
-
-```
-zk-rfq/
-├── circuits/
-│   ├── aggregate_derivation/   # Solver ZK circuit (Noir)
-│   └── limit_check/            # Institution limit proof (Noir)
-├── contracts/
-│   ├── src/
-│   │   ├── ZkRfqSettlement.sol          # ERC-7683 settlement
-│   │   ├── AggregateDerivationVerifier.sol
-│   │   ├── LimitCheckVerifier.sol
-│   │   ├── MockWETH.sol                 # Test token (free faucet)
-│   │   └── MockUSDC.sol                 # Test token (free faucet)
-│   └── script/Deploy.s.sol
-├── gateway/                    # NestJS REST API
-│   └── src/
-│       ├── intents/            # POST /intents, GET /intents/active
-│       ├── bids/               # POST /bids
-│       ├── settlement/         # POST /settlement/prove-and-settle
-│       └── evm/                # Sepolia wallet + contract calls
-├── solver/                     # Rust solver daemon
-│   └── src/
-│       ├── main.rs             # Polling loop
-│       ├── uniswap_quoter.rs   # QuoterV2 on Sepolia
-│       ├── noir_prover.rs      # bb prove (aggregate_derivation)
-│       └── config.rs
-├── frontend/                   # Next.js 14
-│   └── pages/
-│       ├── index.tsx           # Connect wallet → Open Terminal
-│       ├── terminal.tsx        # Submit trade intent
-│       ├── mempool.tsx         # Review bids + approve
-│       └── settlement.tsx      # Real-time settlement monitor
-└── predicates/                 # Pint contract (Essential)
-```
-
----
-
-## Gateway API
+### Intents
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| `POST` | `/intents` | `{ assetPair, amount, limitPrice, swapperAddress, ttlSeconds }` | Submit trade intent |
-| `GET` | `/intents/active` | — | Active intents (solver polling) |
-| `POST` | `/bids` | `{ orderHash, solverAddress, finalAggregateQuote, proof, bidExpiry }` | Solver submits ZK bid |
-| `GET` | `/bids/:orderHash` | — | Get bids for an intent |
-| `POST` | `/settlement/prove-and-settle` | `{ orderHash, institutionLimit }` | Institution approves; gateway proves + settles |
-| `GET` | `/settlement/:orderHash` | — | Poll settlement status |
-| `GET` | `/balances/:address` | — | MockWETH/MockUSDC balances on Sepolia |
-| `GET` | `/health` | — | Gateway + Essential connectivity check |
+| `POST` | `/intents` | `{ assetPair, amount, limitPrice, swapperAddress, ttlSeconds }` | Submit a trade intent. `amount` and `limitPrice` are 1e18 and 1e6 fixed-point strings. |
+| `GET` | `/intents/active` | — | List all non-expired, non-settled intents. Used by solvers to poll. |
+| `GET` | `/intents/:orderHash` | — | Get a specific intent by hash. |
+
+### Bids
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `POST` | `/bids` | `{ orderHash, solverAddress, finalAggregateQuote, proof, bidExpiry }` | Solver submits a ZK-masked bid. |
+| `GET` | `/bids/:orderHash` | — | Get all bids for a given intent. |
+
+### Settlement
+
+| Method | Path | Body | Description |
+|--------|------|------|-------------|
+| `POST` | `/settlement/prove-and-settle` | `{ orderHash, institutionLimit }` | Institution approves. Gateway generates `limit_check` proof server-side and calls `settleOrder()` on Sepolia. |
+| `POST` | `/settlement/approve` | `{ orderHash, institutionProof, publicInputs }` | Institution provides a pre-generated `limit_check` proof (client-side proof generation path). |
+| `GET` | `/settlement/:orderHash` | — | Poll settlement status. Returns `{ status, txHash, blockNumber }`. |
+| `GET` | `/balances/:address` | — | MockWETH and MockUSDC balances for any address on Sepolia. |
+
+### Health
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Gateway status + Essential connectivity check |
+| `GET` | `/health/essential-block` | Latest Essential block number (used by the settlement monitor) |
 
 ---
 
-## Known Limitations
+## 10. Known Limitations & Roadmap
 
-| Limitation | Status |
-|---|---|
-| Single token pair (WETH/USDC) | Intentional for testnet demo — add pairs by expanding token config |
-| Single solver | Whitelist multiple `SOLVER_ADDRESS` values to support competing bids |
-| Server-side limit_check proof | In production this moves to browser WASM so the limit never leaves the institution |
-| No order cancellation | Intents expire via `ttlSeconds`; explicit cancel endpoint not yet added |
-| No EIP-712 signed intents | Intents not wallet-signed yet — add `eth_signTypedData` for production |
+### Current limitations
+
+| Area | Limitation | Planned fix |
+|---|---|---|
+| **Proof generation** | `limit_check` proof runs server-side in the gateway. The institution's limit price leaves their machine. | Move to `@noir-lang/noir_js` WASM in the browser. Limit price stays in browser memory. |
+| **Single token pair** | Only WETH/USDC is supported. Adding pairs requires updating token config and deploying a Uniswap V3 pool for the pair. | Parameterise token addresses; add pair discovery. |
+| **Single solver** | One solver daemon. Essential's block builder supports competing solvers natively. | Whitelist multiple solver addresses; let them compete. |
+| **No EIP-712 signed intents** | Intents are not wallet-signed. A malicious gateway could submit arbitrary intents on behalf of a connected address. | Add `eth_signTypedData` on the `CrossChainOrder` struct in the terminal. |
+| **No order cancellation** | Intents expire via `ttlSeconds` but cannot be explicitly cancelled. | Add a `CancelOrder` predicate to the Pint contract and a `DELETE /intents/:orderHash` endpoint. |
+| **Solver whitelist is static** | The governance key is a single EOA. Adding solvers requires calling `GovernanceUpdateWhitelist`. | Move `governance_key` to a multi-sig or DAO-controlled address. |
+| **Sepolia testnet only** | Not audited or deployed to mainnet. | Security audit → mainnet deployment. |
+| **Essential is centralised** | Currently running a single Essential server node. In production, Essential will be a decentralised network. | Essential's roadmap includes a decentralised node network; the REST API is identical, so migration is a config change. |
+
+### Near-term roadmap
+
+1. Client-side `limit_check` proof generation (browser WASM) — the highest-priority privacy improvement
+2. EIP-712 signed intents — wallet-authenticated order submission
+3. Multiple token pairs — deploy additional Uniswap V3 Sepolia pools, parameterise the solver's QuoterV2 calls
+4. Add a second EVM DEX source (e.g. Curve or Balancer on Sepolia) — update the solver to pass real values instead of the `[10000, 0]` shim, no circuit recompile needed
+5. Production-grade Essential deployment — multi-node cluster, persistent rqlite storage backend
