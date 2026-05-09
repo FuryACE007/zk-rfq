@@ -40,8 +40,6 @@ interface Bid {
   solverAddress: string;
   finalAggregateQuote: string;
   bidExpiry: number;
-  evmWeightBps?: number;
-  solanaWeightBps?: number;
   settled?: boolean;
 }
 
@@ -426,7 +424,7 @@ const MempoolPage: NextPage = () => {
                               <div className="flex items-center gap-2 mb-4">
                                 <Filter size={13} className="text-slate-500" />
                                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-                                  Solver Bids — Multi-Chain Routing Masked
+                                  Solver Bids — Routing Masked
                                 </span>
                               </div>
 
@@ -458,16 +456,9 @@ const MempoolPage: NextPage = () => {
                                       </div>
                                       <div className="text-right">
                                         <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                                          {bid.evmWeightBps != null && (
-                                            <span className="px-2 py-0.5 rounded-lg bg-intent-500/15 text-intent-300 font-mono">
-                                              {bid.evmWeightBps / 100}% EVM
-                                            </span>
-                                          )}
-                                          {bid.solanaWeightBps != null && (
-                                            <span className="px-2 py-0.5 rounded-lg bg-zk-500/15 text-zk-300 font-mono">
-                                              {bid.solanaWeightBps / 100}% SOL
-                                            </span>
-                                          )}
+                                          <span className="px-2 py-0.5 rounded-lg bg-intent-500/15 text-intent-300 font-mono">
+                                            Uniswap V3 · Sepolia
+                                          </span>
                                         </div>
                                       </div>
                                       <Zap size={14} className="text-intent-400 flex-shrink-0" />

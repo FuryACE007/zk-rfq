@@ -6,7 +6,6 @@ import "../src/MockWETH.sol";
 import "../src/MockUSDC.sol";
 import "../src/AggregateDerivationVerifier.sol";
 import "../src/LimitCheckVerifier.sol";
-import "../src/MockVerifier.sol";
 import "../src/ZkRfqSettlement.sol";
 
 /// @notice Deploys the full ZK-RFQ settlement stack on Sepolia.
@@ -58,53 +57,6 @@ contract Deploy is Script {
         console.log("AGGREGATE_VERIFIER_ADDRESS=%s", address(aggregateVerifier));
         console.log("LIMIT_VERIFIER_ADDRESS=%s", address(limitVerifier));
         console.log("SETTLEMENT_CONTRACT=%s", address(settlement));
-
-        vm.stopBroadcast();
-    }
-
-    /// @notice Demo deployment using MockVerifier (always-true) — no real Noir proofs needed.
-    ///
-    /// Usage:
-    ///   forge script script/Deploy.s.sol --sig "runDemo()" --rpc-url $SEPOLIA_RPC_URL \
-    ///     --private-key $DEPLOYER_PRIVATE_KEY --broadcast
-    function runDemo() external {
-        uint256 deployerKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        address deployer = vm.addr(deployerKey);
-
-        vm.startBroadcast(deployerKey);
-
-        MockWETH weth = new MockWETH();
-        MockUSDC usdc = new MockUSDC();
-        console.log("MockWETH deployed at:", address(weth));
-        console.log("MockUSDC deployed at:", address(usdc));
-
-        // Mock verifiers accept any proof bytes — demo only
-        MockVerifier aggregateVerifier = new MockVerifier();
-        MockVerifier limitVerifier = new MockVerifier();
-        console.log("MockVerifier (aggregate) deployed at:", address(aggregateVerifier));
-        console.log("MockVerifier (limit) deployed at:", address(limitVerifier));
-
-        ZkRfqSettlement settlement = new ZkRfqSettlement(
-            address(aggregateVerifier),
-            address(limitVerifier),
-            address(weth),
-            address(usdc)
-        );
-        console.log("ZkRfqSettlement deployed at:", address(settlement));
-
-        address institution = vm.envOr("INSTITUTION_ADDRESS", deployer);
-        address solver = vm.envOr("SOLVER_ADDRESS", deployer);
-
-        weth.mint(institution, 100 ether);
-        usdc.mint(solver, 1_000_000 * 1e6);
-
-        console.log("\n--- Copy these to gateway/.env ---");
-        console.log("MOCK_WETH_ADDRESS=%s", address(weth));
-        console.log("MOCK_USDC_ADDRESS=%s", address(usdc));
-        console.log("AGGREGATE_VERIFIER_ADDRESS=%s", address(aggregateVerifier));
-        console.log("LIMIT_VERIFIER_ADDRESS=%s", address(limitVerifier));
-        console.log("SETTLEMENT_CONTRACT=%s", address(settlement));
-        console.log("\n[DEMO MODE] MockVerifier used — any proof bytes will pass.");
 
         vm.stopBroadcast();
     }

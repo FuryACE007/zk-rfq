@@ -126,24 +126,4 @@ export class SubmitBidDto {
   @IsPositive()
   @Type(() => Number)
   bidExpiry!: number;
-
-  @ApiProperty({
-    description: 'EVM weight in basis points (e.g., 6000 = 60%)',
-    example: 6000,
-  })
-  @IsNumber()
-  @Min(0)
-  @Max(10000)
-  @Type(() => Number)
-  evmWeightBps!: number;
-
-  @ApiProperty({
-    description: 'Solana weight in basis points (e.g., 4000 = 40%)',
-    example: 4000,
-  })
-  @IsNumber()
-  @Min(0)
-  @Max(10000)
-  @Type(() => Number)
-  solanaWeightBps!: number;
 }
